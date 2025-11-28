@@ -1,0 +1,20 @@
+import SwiftUI
+import AppKit
+
+struct FolderPickerButton: View {
+    var onPicked: (URL) -> Void
+
+    var body: some View {
+        Button("Open Project Folder…") {
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = false
+            panel.canChooseDirectories = true
+            panel.allowsMultipleSelection = false
+            panel.begin { response in
+                if response == .OK, let url = panel.urls.first {
+                    onPicked(url)
+                }
+            }
+        }
+    }
+}

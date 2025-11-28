@@ -1,0 +1,31 @@
+import SwiftUI
+import SwiftTerm
+
+struct CodexSessionView: View {
+    @ObservedObject var session: CodexSession
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(session.title).font(.headline)
+                Spacer()
+                Circle()
+                    .frame(width: 8, height: 8)
+                    .foregroundColor(session.isRunning ? .green : .red)
+                Button {
+                    onClose()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+            }
+            .padding()
+
+            Divider()
+
+            TerminalContainer(session: session)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
