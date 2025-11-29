@@ -61,8 +61,11 @@ enum GitService {
         }
     }
 
-    static func removeWorktree(repoRoot: URL, worktreePath: URL) -> Result<Void, GitError> {
-        switch runGit(["worktree", "remove", worktreePath.path], in: repoRoot) {
+    static func removeWorktree(repoRoot: URL, worktreePath: URL, force: Bool = false) -> Result<Void, GitError> {
+        var args = ["worktree", "remove", worktreePath.path]
+        if force { args.insert("-f", at: 2) }
+
+        switch runGit(args, in: repoRoot) {
         case .success:
             return .success(())
         case .failure(let err):

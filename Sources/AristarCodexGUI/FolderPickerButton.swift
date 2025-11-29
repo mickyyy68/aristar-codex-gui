@@ -5,7 +5,7 @@ struct FolderPickerButton: View {
     var onPicked: (URL) -> Void
 
     var body: some View {
-        Button("Open Project Folder…") {
+        Button {
             let panel = NSOpenPanel()
             panel.canChooseFiles = false
             panel.canChooseDirectories = true
@@ -15,6 +15,8 @@ struct FolderPickerButton: View {
                     onPicked(url)
                 }
             }
+        } label: {
+            Label("Open Project Folder…", systemImage: "folder")
         }
     }
 }
