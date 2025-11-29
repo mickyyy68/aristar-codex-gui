@@ -24,8 +24,11 @@ struct CodexSessionView: View {
 
             Divider()
 
-            TerminalContainer(session: session)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { proxy in
+                TerminalContainer(session: session)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
         }
+        .edgesIgnoringSafeArea(.bottom)
     }
 }

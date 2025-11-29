@@ -13,12 +13,16 @@
 - Binary lives at `./.build/debug/AristarCodexGUI` (or `./.build/release/AristarCodexGUI`).
 - Requires Codex CLI installed (`/opt/homebrew/bin/codex` etc.). App auto-resolves path via `$PATH` and common locations.
 
+## Release automation
+- `scripts/release.sh vX.Y.Z "Notes"` builds the release binary, zips it to `AristarCodexGUI-vX.Y.Z-macOS-arm64.zip`, and uses `gh release create` to create the GitHub release (tag is created on GitHub as part of the release).
+- `gh` CLI is required; the script exits early with a warning if it is missing or not authenticated (`gh auth status`).
+
 ## Key flows
 1) Auth: `CodexAuthManager` wraps `codex login/status`. Status drives the “Codex: Connected” banner. No tokens handled in-app.
 2) Project hub: macOS UI now splits into tabs. The Hubs tab shows favorites and recents (multi-project), lets you select a project to view its branches, and opens branch panes (toggled by clicking branches) for managed worktrees on that branch. Only app-managed worktrees are listed; panes show lists with actions and confirmation on delete (no inline detail/terminal).
 3) Favorites/recents: favorites are user-pinned projects (persisted via `ProjectListStore`), recents track the most recently selected projects. Both are shown in the Project column.
 4) Branch panes: each pane belongs to a project/branch and lists managed worktrees with launch/stop/delete and “Add to working set” actions. Items already in the working set are visually distinguished.
-5) Working Set tab: split layout with a left sidebar list (running status dot, project/branch badges, inline remove) and a right detail pane for the selected worktree. Items include status and quick actions (launch/stop/delete/open path) and persist via `WorkingSetStore`. Removal from the working set does not delete the worktree.
+5) Working Set tab: split layout with a left sidebar list (running status dot, project/branch badges, inline remove) and a right detail pane for the selected worktree. Items include status and quick actions (start/stop/open path). Removal from the working set does not delete the worktree.
 6) Worktree + agent creation: still uses the managed worktree pattern (`aristar-wt-<safeBranch>-<shortid>` from the selected branch); metadata is stored alongside. Agent launch/stop uses branch-pane and working-set controls.
 7) Deletion: deleting a worktree removes its session (if running), the worktree folder, and the agent branch.
 8) Branch pane persistence: open branch panes (project + branch + selected worktree) persist to `UserDefaults` and restore on launch. Missing/non-git projects are skipped and surfaced via a banner.
@@ -45,13 +49,14 @@
 ## Behavioral details
 - Worktree root per project: `~/.aristar-codex-gui/worktrees/<project-name>-<hash>/…`.
 - Managed worktree/branch name: `aristar-wt-<safeBranch>-<shortid>`; created from selected base branch/start point. Deleted when the worktree is removed. Legacy `agent-*` worktrees/branches are still recognized for cleanup. Worktree deletion will retry with `git worktree remove -f` when the worktree is dirty.
-- Worktree metadata: `.codex-worktree.json` stores base branch, agent branch, and created date; used to rebuild the worktree list. Legacy worktrees fall back to name-based inference.
+- Worktree metadata: stored outside the worktree at `~/.aristar-codex-gui/metadata/<project-key>/<worktree>.json` (base branch, agent branch, created date).
 - Recent projects: `ProjectListStore` keeps an ordered list of recent project paths; favorites are stored separately and pinned. Legacy `RecentProjectStore` is still present for backward compatibility but the UI now relies on the favorites/recents lists.
 - Branch panes: only app-managed worktrees are listed for a project/branch. Worktree creation is blocked if the selected project is itself a managed worktree (nested worktree guard).
 - Cleanup: deleting a worktree removes its directory (if under the managed root) and deletes the agent branch; stopping an agent no longer removes the worktree.
 - Nested worktrees are blocked: if the opened folder lives under the managed worktrees root, creating additional worktrees is disabled (depth capped at 1).
 - Session updates: `AppModel` observes `CodexSessionManager` so session start/stop state (including the Working Set terminal) stays in sync across views.
-- Terminal: SwiftTerm connected to PTY master; TERM set to `xterm-256color`; raw escape sequences are passed through to SwiftTerm.
+- Session persistence: removed; “Resume” runs `codex resume` in the worktree without storing session history.
+- Terminal: SwiftTerm connected to PTY master; TERM set to `xterm-256color`; raw escape sequences are passed through to SwiftTerm; session start is deferred until the view has a real size so the PTY is created with the correct cols/rows (also exported via `COLUMNS`/`LINES`), and subsequent resizes update the PTY size with SIGWINCH; a 1-row safety margin is applied (report rows-1 to the PTY) to avoid bottom-edge clipping; sessions launch a login `zsh` that runs the Codex command then execs into an interactive shell.
 - Selection: Hubs tab shows project lists and branch panes; each pane lists managed worktrees for a branch with per-row actions and delete confirmation. Working Set tab uses a sidebar list + detail pane to manage pinned worktrees across projects.
 - Navigation: Cmd+1 switches to Hubs; Cmd+2 switches to Working Set.
 - Error surfacing: worktree creation errors and missing persisted worktrees surface inline; codex binary missing errors surfaced via auth status.
@@ -59,7 +64,6 @@
 ## Known gaps / TODOs
 - ANSI/OSC passthrough is delegated to SwiftTerm; no custom color theme yet.
 - No settings UI for Codex binary path or profile; binary auto-resolve only.
-- No resize/cols-rows sync back to Codex; SwiftTerm handles display internally.
 - SwiftTerm warning about README resource is harmless; could be excluded if desired.
 
 ## Validation

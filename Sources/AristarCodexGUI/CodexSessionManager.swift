@@ -15,6 +15,7 @@ final class CodexSessionManager: ObservableObject {
     let gitInfo: GitRepoInfo
     let codexPath: String
     let worktreesRoot: URL
+    let metadataRoot: URL
     let isManagedRoot: Bool
 
     init(projectRoot: URL, codexPath: String) {
@@ -22,11 +23,17 @@ final class CodexSessionManager: ObservableObject {
         self.codexPath = codexPath
         self.gitInfo = GitService.detectRepo(at: projectRoot)
         self.worktreesRoot = CodexSessionManager.makeWorktreesRoot(for: projectRoot)
+        self.metadataRoot = CodexSessionManager.makeMetadataRoot(for: projectRoot)
         let managedBase = CodexSessionManager.managedBaseRoot().path
         self.isManagedRoot = projectRoot.path.hasPrefix(managedBase)
 
         try? FileManager.default.createDirectory(
             at: worktreesRoot,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+        try? FileManager.default.createDirectory(
+            at: metadataRoot,
             withIntermediateDirectories: true,
             attributes: nil
         )
@@ -39,7 +46,8 @@ final class CodexSessionManager: ObservableObject {
             codexPath: codexPath,
             workingDirectory: projectRoot,
             originalBranch: nil,
-            agentBranch: nil
+            agentBranch: nil,
+            shouldResume: false
         )
         sessions.append(session)
         selectedSessionID = session.id
@@ -71,6 +79,7 @@ final class CodexSessionManager: ObservableObject {
             if case .failure(let err) = wtResult {
                 lastWorktreeError = "Failed to delete worktree: \(err)"
             }
+            removeMetadata(for: session.workingDirectory)
         }
 
         if sessions.isEmpty {
@@ -176,6 +185,12 @@ final class CodexSessionManager: ObservableObject {
         return filtered
     }
 
+    func loadMetadata(for worktreeURL: URL) -> WorktreeMetadata? {
+        let metaURL = metadataURL(for: worktreeURL)
+        guard let data = try? Data(contentsOf: metaURL) else { return nil }
+        return try? JSONDecoder().decode(WorktreeMetadata.self, from: data)
+    }
+
     func startSession(for worktree: ManagedWorktree) -> CodexSession {
         if let existing = session(for: worktree) {
             selectedSessionID = existing.id
@@ -187,7 +202,27 @@ final class CodexSessionManager: ObservableObject {
             codexPath: codexPath,
             workingDirectory: worktree.path,
             originalBranch: worktree.originalBranch,
-            agentBranch: worktree.agentBranch
+            agentBranch: worktree.agentBranch,
+            shouldResume: false
+        )
+        sessions.append(session)
+        selectedSessionID = session.id
+        return session
+    }
+
+    func resumeSession(for worktree: ManagedWorktree) -> CodexSession {
+        if let existing = session(for: worktree) {
+            selectedSessionID = existing.id
+            return existing
+        }
+
+        let session = CodexSession(
+            title: worktree.displayName,
+            codexPath: codexPath,
+            workingDirectory: worktree.path,
+            originalBranch: worktree.originalBranch,
+            agentBranch: worktree.agentBranch,
+            shouldResume: true
         )
         sessions.append(session)
         selectedSessionID = session.id
@@ -238,19 +273,28 @@ final class CodexSessionManager: ObservableObject {
             print("[WorktreeDelete] Branch delete failed: \(err)")
             return false
         }
+        removeMetadata(for: worktree.path)
         print("[WorktreeDelete] Worktree \(worktree.path.lastPathComponent) removed")
         return true
     }
 
     private func persistMetadata(_ metadata: WorktreeMetadata, at worktreeURL: URL) {
         let url = metadataURL(for: worktreeURL)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let data = try? JSONEncoder().encode(metadata) {
             try? data.write(to: url)
         }
     }
 
     private func metadataURL(for worktreeURL: URL) -> URL {
-        worktreeURL.appendingPathComponent(".codex-worktree.json")
+        metadataRoot
+            .appendingPathComponent(worktreeURL.lastPathComponent)
+            .appendingPathExtension("json")
+    }
+
+    private func removeMetadata(for worktreeURL: URL) {
+        let url = metadataURL(for: worktreeURL)
+        try? FileManager.default.removeItem(at: url)
     }
 
     static func managedBaseRoot() -> URL {
@@ -261,6 +305,18 @@ final class CodexSessionManager: ObservableObject {
 
     static func makeWorktreesRoot(for projectRoot: URL) -> URL {
         let base = managedBaseRoot()
+        let key = projectKey(for: projectRoot)
+        return base.appendingPathComponent(key)
+    }
+
+    static func metadataBaseRoot() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".aristar-codex-gui")
+            .appendingPathComponent("metadata")
+    }
+
+    static func makeMetadataRoot(for projectRoot: URL) -> URL {
+        let base = metadataBaseRoot()
         let key = projectKey(for: projectRoot)
         return base.appendingPathComponent(key)
     }

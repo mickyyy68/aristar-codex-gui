@@ -180,6 +180,16 @@ final class AppModel: ObservableObject {
         return session
     }
 
+    func resume(worktree: ManagedWorktree, project: ProjectRef) -> CodexSession? {
+        guard let manager = manager(for: project.url) else {
+            log("[resume] No manager for project \(project.name)")
+            return nil
+        }
+        let session = manager.resumeSession(for: worktree)
+        log("[resume] Resumed session worktree=\(worktree.displayName) branch=\(worktree.originalBranch) project=\(project.name)")
+        return session
+    }
+
     func stop(worktree: ManagedWorktree, project: ProjectRef) {
         guard let manager = manager(for: project.url) else {
             log("[stop] No manager for project \(project.name)")
@@ -270,6 +280,15 @@ final class AppModel: ObservableObject {
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
             return nil
         }
+        if let manager = manager(for: item.project.url),
+           let meta = manager.loadMetadata(for: url) {
+            return ManagedWorktree(
+                path: url,
+                originalBranch: meta.originalBranch,
+                agentBranch: meta.agentBranch,
+                createdAt: meta.createdAt
+            )
+        }
         return ManagedWorktree(
             path: url,
             originalBranch: item.originalBranch,
@@ -330,6 +349,19 @@ final class AppModel: ObservableObject {
     private func saveFavorites() {
         ProjectListStore.saveFavorites(favorites)
     }
+
+    private func refreshWorktree(_ updated: ManagedWorktree, for project: ProjectRef) {
+        branchPanes = branchPanes.map { pane in
+            guard pane.project == project else { return pane }
+            var copy = pane
+            if let idx = copy.worktrees.firstIndex(where: { $0.id == updated.id }) {
+                copy.worktrees[idx] = updated
+            }
+            return copy
+        }
+    }
+
+    // Session persistence removed
 
     private func persistBranchPanes() {
         BranchPaneStore.save(branchPanes)

@@ -797,6 +797,20 @@ private struct WorkingSetDetailBody: View {
                         }
                         .buttonStyle(.bordered)
                     }
+
+                    Button {
+                        _ = model.launch(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Start agent", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        _ = model.resume(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Resume", systemImage: "clock.arrow.circlepath")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
 
@@ -881,14 +895,7 @@ private struct WorktreeRow: View {
                     }
                     .buttonStyle(.bordered)
                 } else {
-                    if isInWorkingSet {
-                        Button(role: .destructive) {
-                            (onRemoveFromWorkingSet ?? onDelete)()
-                        } label: {
-                            Label("Remove", systemImage: "minus.circle")
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
+                    if !isInWorkingSet {
                         Button {
                             onAddToWorkingSet()
                         } label: {
