@@ -16,7 +16,7 @@ struct CodexSessionView: View {
                 Button {
                     onClose()
                 } label: {
-                    Label("Delete", systemImage: "trash")
+                    Label("Close", systemImage: "xmark.circle")
                 }
                 .buttonStyle(.borderless)
             }

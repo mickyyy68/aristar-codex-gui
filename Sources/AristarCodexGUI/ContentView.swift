@@ -751,13 +751,6 @@ private struct WorkingSetDetail: View {
                     .foregroundStyle(.orange)
                 Text("Worktree not found. Remove it from the working set.")
                     .foregroundStyle(.secondary)
-                if let item = model.selectedWorkingSetItem {
-                    Button(role: .destructive) {
-                        model.removeFromWorkingSet(item)
-                    } label: {
-                        Label("Remove from working set", systemImage: "minus.circle")
-                    }
-                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -803,28 +796,7 @@ private struct WorkingSetDetailBody: View {
                             Label("Stop", systemImage: "stop.fill")
                         }
                         .buttonStyle(.bordered)
-                    } else {
-                        Button {
-                            _ = model.launch(worktree: worktree, project: item.project)
-                        } label: {
-                            Label("Launch", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
                     }
-
-                    Button {
-                        model.removeFromWorkingSet(item)
-                    } label: {
-                        Label("Remove from working set", systemImage: "minus.circle")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button(role: .destructive) {
-                        model.deleteWorktree(worktree, project: item.project)
-                    } label: {
-                        Label("Delete worktree", systemImage: "trash")
-                    }
-                    .buttonStyle(.bordered)
                 }
             }
 

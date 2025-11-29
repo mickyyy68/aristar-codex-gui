@@ -3,15 +3,23 @@ import SwiftTerm
 
 struct TerminalContainer: NSViewRepresentable {
     @ObservedObject var session: CodexSession
+    private static var viewCache: [UUID: TerminalView] = [:]
 
     func makeCoordinator() -> Coordinator {
         Coordinator(session: session)
     }
 
     func makeNSView(context: Context) -> TerminalView {
+        if let cached = Self.viewCache[session.id] {
+            cached.terminalDelegate = context.coordinator
+            bindSessionOutput(to: cached, coordinator: context.coordinator, replayExisting: false)
+            return cached
+        }
+
         let terminal = TerminalView(frame: .zero)
         terminal.terminalDelegate = context.coordinator
-        bindSessionOutput(to: terminal, coordinator: context.coordinator)
+        bindSessionOutput(to: terminal, coordinator: context.coordinator, replayExisting: true)
+        Self.viewCache[session.id] = terminal
         return terminal
     }
 
@@ -20,7 +28,7 @@ struct TerminalContainer: NSViewRepresentable {
         if context.coordinator.session !== session {
             context.coordinator.session?.detachOutput()
             context.coordinator.session = session
-            bindSessionOutput(to: nsView, coordinator: context.coordinator)
+            bindSessionOutput(to: nsView, coordinator: context.coordinator, replayExisting: true)
         }
     }
 
@@ -28,11 +36,19 @@ struct TerminalContainer: NSViewRepresentable {
         coordinator.session?.detachOutput()
     }
 
-    private func bindSessionOutput(to terminal: TerminalView, coordinator: Coordinator) {
+    private func bindSessionOutput(to terminal: TerminalView, coordinator: Coordinator, replayExisting: Bool) {
         coordinator.session = session
         session.attachOutput { data in
             let slice = ArraySlice<UInt8>(data)
             terminal.feed(byteArray: slice)
+        }
+        if replayExisting, !session.output.isEmpty, let data = session.output.data(using: .utf8) {
+            // Defer to the next runloop tick so the view has a real size before replaying,
+            // avoiding narrow (1-col) layouts.
+            DispatchQueue.main.async {
+                let slice = ArraySlice<UInt8>(data)
+                terminal.feed(byteArray: slice)
+            }
         }
     }
 
