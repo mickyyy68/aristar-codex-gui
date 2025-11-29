@@ -17,6 +17,8 @@ struct FolderPickerButton: View {
             }
         } label: {
             Label("Open Project Folder…", systemImage: "folder")
+                .font(BrandFont.ui(size: 14, weight: .semibold))
+                .foregroundColor(BrandColor.flour)
         }
     }
 }

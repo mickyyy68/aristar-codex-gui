@@ -51,7 +51,7 @@ struct WorkingSetItem: Identifiable, Codable, Equatable {
     var displayName: String { URL(fileURLWithPath: worktreePath).lastPathComponent }
 }
 
-enum HubTab: Int {
+enum HubTab: Int, Hashable {
     case hubs
     case workingSet
 }

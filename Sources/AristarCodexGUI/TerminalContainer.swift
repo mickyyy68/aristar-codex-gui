@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftTerm
+import AppKit
 
 struct TerminalContainer: NSViewRepresentable {
     @ObservedObject var session: CodexSession
@@ -13,6 +14,7 @@ struct TerminalContainer: NSViewRepresentable {
         // Cached view path: reattach without replaying history.
         if let cached = Self.viewCache[session.id] {
             cached.terminalDelegate = context.coordinator
+            applyTheme(to: cached)
             bindSessionOutput(to: cached, coordinator: context.coordinator, replayExisting: false)
             return cached
         }
@@ -21,6 +23,7 @@ struct TerminalContainer: NSViewRepresentable {
         let terminal = TerminalView(frame: .zero)
         terminal.translatesAutoresizingMaskIntoConstraints = true
         terminal.wantsLayer = true
+        applyTheme(to: terminal)
         terminal.terminalDelegate = context.coordinator
         Self.viewCache[session.id] = terminal
         bindSessionOutput(to: terminal, coordinator: context.coordinator, replayExisting: true)
@@ -29,11 +32,18 @@ struct TerminalContainer: NSViewRepresentable {
 
     func updateNSView(_ nsView: TerminalView, context: Context) {
         nsView.terminalDelegate = context.coordinator
+        applyTheme(to: nsView)
         if context.coordinator.session !== session {
             context.coordinator.session?.detachOutput()
             context.coordinator.session = session
             bindSessionOutput(to: nsView, coordinator: context.coordinator, replayExisting: true)
         }
+    }
+
+    private func applyTheme(to terminal: TerminalView) {
+        terminal.nativeBackgroundColor = NSColor(BrandColor.ink)
+        terminal.nativeForegroundColor = NSColor(BrandColor.flour)
+        terminal.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
     }
 
     static func dismantleNSView(_ nsView: TerminalView, coordinator: Coordinator) {

@@ -13,6 +13,8 @@ struct AristarCodexGUIApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(model: model)
+                .accentColor(BrandColor.ion)
+                .preferredColorScheme(.dark)
                 .task {
                     // Bring the app to the foreground when launched from Terminal.
                     NSApp.activate(ignoringOtherApps: true)
