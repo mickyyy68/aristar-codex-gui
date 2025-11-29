@@ -72,17 +72,6 @@ private struct HeaderBar: View {
                 }
                 .help("Open a project folder")
 
-                Button {
-                    pickFolder { url in
-                        let ref = ProjectRef(url: url)
-                        model.addFavorite(ref)
-                        model.selectProject(ref)
-                    }
-                } label: {
-                    Label("Add Favorite", systemImage: "star")
-                }
-                .help("Pick a folder and pin it to favorites")
-
                 Spacer()
 
                 Picker("", selection: $model.selectedTab) {
