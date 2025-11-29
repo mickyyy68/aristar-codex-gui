@@ -3,164 +3,257 @@ import Combine
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var projectRoot: URL?
-    @Published var sessionManager: CodexSessionManager?
-    @Published var branches: [String] = []
-    @Published var baseBranch: String?
-    @Published var worktrees: [ManagedWorktree] = []
-    @Published var selectedWorktreeID: String?
-    @Published var worktreeError: String?
-    @Published var recentProjectURL: URL?
+    @Published var favorites: [ProjectRef] = []
+    @Published var recents: [ProjectRef] = []
+    @Published var selectedProject: ProjectRef?
+    @Published var branchesForSelected: [String] = []
+    @Published var selectedBranchName: String?
+    @Published var branchPanes: [BranchPane] = []
+    @Published var workingSet: [WorkingSetItem] = []
+    @Published var selectedWorkingSetID: String?
+    @Published var selectedTab: HubTab = .hubs
     @Published var restoreError: String?
+    @Published var hubError: String?
 
     let codexAuth: CodexAuthManager
-    private var projectKey: String?
+    private var managers: [String: CodexSessionManager] = [:]
+    private var managerCancellables: [String: AnyCancellable] = [:]
 
     init() {
         self.codexAuth = CodexAuthManager()
         self.codexAuth.checkStatus()
-        self.recentProjectURL = RecentProjectStore.load()
+        self.recents = ProjectListStore.loadRecents()
+        self.favorites = ProjectListStore.loadFavorites()
+        self.workingSet = WorkingSetStore.load()
+
+        // Migration from legacy single recent
+        if recents.isEmpty, let legacy = RecentProjectStore.load() {
+            let ref = ProjectRef(url: legacy)
+            recents = [ref]
+            saveRecents()
+        }
+
+        restoreBranchPanes()
     }
 
-    func openProject(at url: URL) {
-        projectRoot = url
-        let manager = CodexSessionManager(projectRoot: url, codexPath: codexAuth.codexPath)
-        sessionManager = manager
-        projectKey = CodexSessionManager.projectKey(for: url)
+    // MARK: - Project hub
 
-        loadBranches(using: manager)
-        hydrateStateFromStore()
-
-        RecentProjectStore.save(url: url)
-        recentProjectURL = url
+    func selectProject(_ ref: ProjectRef) {
+        selectedProject = ref
+        addRecent(ref)
+        branchesForSelected = loadBranches(for: ref)
         restoreError = nil
+        hubError = nil
+        selectedBranchName = nil
     }
 
-    func restoreLastProjectIfAvailable() {
-        if recentProjectURL == nil {
-            recentProjectURL = RecentProjectStore.load()
+    func addFavorite(_ ref: ProjectRef) {
+        if !favorites.contains(ref) {
+            favorites.append(ref)
+            saveFavorites()
         }
+    }
 
-        guard sessionManager == nil,
-              let url = recentProjectURL else { return }
+    func removeFavorite(_ ref: ProjectRef) {
+        favorites.removeAll { $0 == ref }
+        saveFavorites()
+    }
 
-        var isDir: ObjCBool = false
-        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
-        let readable = FileManager.default.isReadableFile(atPath: url.path)
+    func addRecent(_ ref: ProjectRef) {
+        recents.removeAll { $0 == ref }
+        recents.insert(ref, at: 0)
+        saveRecents()
+    }
 
-        guard exists, isDir.boolValue, readable else {
-            restoreError = "Last project folder not found. Pick a folder to continue."
-            RecentProjectStore.clear()
-            recentProjectURL = nil
+    func openBranchPane(for project: ProjectRef, branch: String) {
+        if let idx = branchPanes.firstIndex(where: { $0.project == project && $0.branch == branch }) {
+            branchPanes.remove(at: idx)
+            if selectedBranchName == branch {
+                selectedBranchName = branchPanes.first?.branch
+            }
+            persistBranchPanes()
             return
         }
-
-        openProject(at: url)
-    }
-
-    func selectBaseBranch(_ branch: String) {
-        baseBranch = branch
-        reloadWorktrees()
-        persistProjectState()
-    }
-
-    func createWorktreeForBaseBranch() {
-        guard let manager = sessionManager, let baseBranch else { return }
-        if manager.isManagedRoot {
-            worktreeError = "Cannot create a worktree from another managed worktree (depth limit 1). Open the main repository instead."
-            return
+        var pane = BranchPane(project: project, branch: branch)
+        pane.worktrees = loadManagedWorktrees(for: branch, project: project)
+        if let first = pane.worktrees.first {
+            pane.selectedWorktreeID = first.id
         }
-        if let newWT = manager.createManagedWorktree(branch: baseBranch) {
-            worktreeError = nil
-            reloadWorktrees(selecting: newWT)
-        } else {
-            worktreeError = manager.lastWorktreeError
+        branchPanes.append(pane)
+        selectedBranchName = branch
+        persistBranchPanes()
+    }
+
+    func closeBranchPane(_ pane: BranchPane) {
+        branchPanes.removeAll { $0.id == pane.id }
+        if selectedBranchName == pane.branch {
+            selectedBranchName = branchPanes.first?.branch
         }
+        persistBranchPanes()
     }
 
-    func reloadWorktrees(selecting newSelection: ManagedWorktree? = nil) {
-        worktreeError = nil
-        guard let manager = sessionManager, let baseBranch else {
-            worktrees = []
-            return
+    func refreshPane(_ pane: BranchPane) {
+        guard let idx = branchPanes.firstIndex(where: { $0.id == pane.id }) else { return }
+        var updated = branchPanes[idx]
+        updated.worktrees = loadManagedWorktrees(for: pane.branch, project: pane.project)
+        if let selected = updated.selectedWorktreeID,
+           !updated.worktrees.contains(where: { $0.id == selected }) {
+            updated.selectedWorktreeID = updated.worktrees.first?.id
         }
-        let list = manager.loadManagedWorktrees(for: baseBranch)
-        worktrees = list.sorted { ($0.createdAt ?? Date.distantPast) > ($1.createdAt ?? Date.distantPast) }
-
-        if let newSelection {
-            selectedWorktreeID = newSelection.id
-        } else if let selectedWorktreeID,
-                  list.contains(where: { $0.id == selectedWorktreeID }) {
-            // keep existing selection
-        } else if let first = worktrees.first {
-            selectedWorktreeID = first.id
-        } else {
-            selectedWorktreeID = nil
-        }
-
-        persistProjectState()
+        branchPanes[idx] = updated
+        persistBranchPanes()
     }
 
-    func selectWorktree(_ worktree: ManagedWorktree?) {
-        selectedWorktreeID = worktree?.id
-        persistProjectState()
+    func selectWorktree(_ worktree: ManagedWorktree, in pane: BranchPane) {
+        guard let idx = branchPanes.firstIndex(where: { $0.id == pane.id }) else { return }
+        var updated = branchPanes[idx]
+        updated.selectedWorktreeID = worktree.id
+        branchPanes[idx] = updated
+        persistBranchPanes()
     }
 
-    var selectedWorktree: ManagedWorktree? {
-        worktrees.first { $0.id == selectedWorktreeID }
-    }
-
-    func launchAgentForSelectedWorktree() -> CodexSession? {
-        guard let manager = sessionManager, let selectedWorktree else { return nil }
-        return manager.startSession(for: selectedWorktree)
-    }
-
-    func stopAgentForSelectedWorktree() {
-        guard let manager = sessionManager, let selectedWorktree else { return }
-        manager.stopSession(for: selectedWorktree)
-    }
-
-    func sessionForSelectedWorktree() -> CodexSession? {
-        guard let manager = sessionManager, let selectedWorktree else { return nil }
-        return manager.session(for: selectedWorktree)
-    }
-
-    func deleteSelectedWorktree() {
-        guard let manager = sessionManager, let selectedWorktree else { return }
-        if !manager.deleteWorktree(selectedWorktree) {
-            worktreeError = manager.lastWorktreeError
-        }
-        reloadWorktrees()
-    }
-
-    func delete(worktree: ManagedWorktree) {
-        guard let manager = sessionManager else { return }
+    func deleteWorktree(_ worktree: ManagedWorktree, in pane: BranchPane) {
+        guard let manager = manager(for: pane.project.url) else { return }
         if !manager.deleteWorktree(worktree) {
-            worktreeError = manager.lastWorktreeError
+            hubError = manager.lastWorktreeError
         }
-        if selectedWorktreeID == worktree.id {
-            selectedWorktreeID = nil
-        }
-        reloadWorktrees()
+        workingSet.removeAll { $0.id == worktree.id }
+        WorkingSetStore.save(workingSet)
+        refreshPane(pane)
+        persistBranchPanes()
     }
 
-    // MARK: - Private helpers
+    func createWorktree(in pane: BranchPane) {
+        guard let manager = manager(for: pane.project.url) else { return }
+        if manager.isManagedRoot {
+            hubError = "Cannot create a worktree from another managed worktree (depth limit 1)."
+            return
+        }
+        if manager.createManagedWorktree(branch: pane.branch) != nil {
+            hubError = nil
+            refreshPane(pane)
+        } else {
+            hubError = manager.lastWorktreeError
+        }
+    }
 
-    private func loadBranches(using manager: CodexSessionManager) {
+    // MARK: - Working set
+
+    func addToWorkingSet(worktree: ManagedWorktree, project: ProjectRef) {
+        let item = WorkingSetItem(worktree: worktree, project: project)
+        if !workingSet.contains(item) {
+            workingSet.append(item)
+            WorkingSetStore.save(workingSet)
+            selectedWorkingSetID = item.id
+        }
+    }
+
+    func removeFromWorkingSet(_ item: WorkingSetItem) {
+        workingSet.removeAll { $0.id == item.id }
+        WorkingSetStore.save(workingSet)
+        if selectedWorkingSetID == item.id {
+            selectedWorkingSetID = workingSet.first?.id
+        }
+    }
+
+    func isInWorkingSet(worktree: ManagedWorktree) -> Bool {
+        workingSet.contains { $0.id == worktree.id }
+    }
+
+    func removeFromWorkingSet(worktree: ManagedWorktree, project: ProjectRef) {
+        workingSet.removeAll { $0.id == worktree.id }
+        WorkingSetStore.save(workingSet)
+        if selectedWorkingSetID == worktree.id {
+            selectedWorkingSetID = workingSet.first?.id
+        }
+    }
+
+    // MARK: - Sessions
+
+    func launch(worktree: ManagedWorktree, project: ProjectRef) -> CodexSession? {
+        guard let manager = manager(for: project.url) else {
+            log("[launch] No manager for project \(project.name)")
+            return nil
+        }
+        let session = manager.startSession(for: worktree)
+        log("[launch] Started session id=\(session.id) worktree=\(worktree.displayName) branch=\(worktree.originalBranch) project=\(project.name)")
+        return session
+    }
+
+    func stop(worktree: ManagedWorktree, project: ProjectRef) {
+        guard let manager = manager(for: project.url) else {
+            log("[stop] No manager for project \(project.name)")
+            return
+        }
+        manager.stopSession(for: worktree)
+        log("[stop] Stopped session worktree=\(worktree.displayName) branch=\(worktree.originalBranch) project=\(project.name)")
+    }
+
+    func session(for worktree: ManagedWorktree, project: ProjectRef) -> CodexSession? {
+        managers[project.url.path]?.session(for: worktree)
+    }
+
+    func isManagedRoot(_ project: ProjectRef) -> Bool {
+        managers[project.url.path]?.isManagedRoot ?? false
+    }
+
+    func selectWorkingSet(item: WorkingSetItem?) {
+        selectedWorkingSetID = item?.id
+    }
+
+    var selectedWorkingSetItem: WorkingSetItem? {
+        workingSet.first { $0.id == selectedWorkingSetID }
+    }
+
+    func deleteWorktree(_ worktree: ManagedWorktree, project: ProjectRef) {
+        guard let manager = manager(for: project.url) else { return }
+        if !manager.deleteWorktree(worktree) {
+            hubError = manager.lastWorktreeError
+            log("[delete] Failed \(manager.lastWorktreeError ?? "unknown error") worktree=\(worktree.displayName)")
+        }
+        removeFromWorkingSet(worktree: worktree, project: project)
+        branchPanes = branchPanes.map { pane in
+            var updated = pane
+            if pane.project == project {
+                updated.worktrees.removeAll { $0.id == worktree.id }
+            }
+            return updated
+        }
+        log("[delete] Removed worktree=\(worktree.displayName) project=\(project.name)")
+        persistBranchPanes()
+    }
+
+    // MARK: - Data helpers
+
+    private func manager(for url: URL) -> CodexSessionManager? {
+        if let existing = managers[url.path] {
+            return existing
+        }
+        let manager = CodexSessionManager(projectRoot: url, codexPath: codexAuth.codexPath)
+        if !manager.gitInfo.isGitRepo {
+            hubError = "Not a git repository at \(url.lastPathComponent)."
+            return nil
+        }
+        managerCancellables[url.path] = manager.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+        managers[url.path] = manager
+        return manager
+    }
+
+    private func loadBranches(for project: ProjectRef) -> [String] {
+        guard let manager = manager(for: project.url) else { return [] }
         if manager.gitInfo.isGitRepo {
             switch GitService.listBranches(in: manager.gitInfo.repoRoot) {
             case .success(let list):
-                branches = sanitizeBranches(list)
+                return sanitizeBranches(list)
             case .failure:
-                branches = []
+                return []
             }
-        } else {
-            branches = []
         }
-
-        if baseBranch == nil {
-            baseBranch = branches.first
-        }
+        return []
     }
 
     private func sanitizeBranches(_ list: [String]) -> [String] {
@@ -171,36 +264,80 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func hydrateStateFromStore() {
-        guard let projectKey else {
-            baseBranch = branches.first
-            reloadWorktrees()
-            return
+    func worktree(from item: WorkingSetItem) -> ManagedWorktree? {
+        let url = item.url
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            return nil
+        }
+        return ManagedWorktree(
+            path: url,
+            originalBranch: item.originalBranch,
+            agentBranch: item.agentBranch,
+            createdAt: nil
+        )
+    }
+
+    private func loadManagedWorktrees(for branch: String, project: ProjectRef) -> [ManagedWorktree] {
+        guard let manager = manager(for: project.url) else { return [] }
+        let list = manager.loadManagedWorktrees(for: branch)
+        return list.sorted { ($0.createdAt ?? Date.distantPast) > ($1.createdAt ?? Date.distantPast) }
+    }
+
+    private func restoreBranchPanes() {
+        let snapshots = BranchPaneStore.load()
+        guard !snapshots.isEmpty else { return }
+
+        var restored: [BranchPane] = []
+        var skipped: [String] = []
+
+        for snap in snapshots {
+            let url = URL(fileURLWithPath: snap.projectPath)
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+                skipped.append("\(url.lastPathComponent) (missing)")
+                continue
+            }
+            let ref = ProjectRef(url: url)
+            guard let manager = manager(for: url), manager.gitInfo.isGitRepo else {
+                skipped.append("\(ref.name) (not a git repo)")
+                continue
+            }
+
+            var pane = BranchPane(project: ref, branch: snap.branch)
+            pane.worktrees = loadManagedWorktrees(for: snap.branch, project: ref)
+            if let savedID = snap.selectedWorktreeID,
+               pane.worktrees.contains(where: { $0.id == savedID }) {
+                pane.selectedWorktreeID = savedID
+            } else {
+                pane.selectedWorktreeID = pane.worktrees.first?.id
+            }
+            restored.append(pane)
         }
 
-        let state = ProjectStateStore.load(for: projectKey)
-        if let desiredBranch = state?.baseBranch, branches.contains(desiredBranch) {
-            baseBranch = desiredBranch
-        } else {
-            baseBranch = branches.first
-        }
-        reloadWorktrees()
+        branchPanes = restored
+        selectedBranchName = branchPanes.first?.branch
 
-        if let targetPath = state?.selectedWorktreePath,
-           let match = worktrees.first(where: { $0.path.path == targetPath }) {
-            selectedWorktreeID = match.id
-            worktreeError = nil
-        } else if state?.selectedWorktreePath != nil {
-            worktreeError = "Previously selected worktree is missing. Choose or create another."
+        if !skipped.isEmpty {
+            restoreError = "Skipped \(skipped.count) branch pane(s): \(skipped.joined(separator: ", "))"
         }
     }
 
-    private func persistProjectState() {
-        guard let projectKey else { return }
-        let state = ProjectState(
-            baseBranch: baseBranch,
-            selectedWorktreePath: selectedWorktree?.path.path
-        )
-        ProjectStateStore.save(state, for: projectKey)
+    private func saveRecents() {
+        ProjectListStore.saveRecents(recents)
+    }
+
+    private func saveFavorites() {
+        ProjectListStore.saveFavorites(favorites)
+    }
+
+    private func persistBranchPanes() {
+        BranchPaneStore.save(branchPanes)
+    }
+
+    // MARK: - Logging
+
+    private func log(_ message: String) {
+        print("[AppModel] \(message)")
     }
 }
