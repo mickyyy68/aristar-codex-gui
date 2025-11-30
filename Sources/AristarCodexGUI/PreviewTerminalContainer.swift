@@ -17,6 +17,10 @@ struct PreviewTerminalContainer: NSViewRepresentable {
         terminal.terminalDelegate = context.coordinator
         context.coordinator.terminal = terminal
         context.coordinator.installFrameObserver(on: terminal)
+        DispatchQueue.main.async { [weak coordinator = context.coordinator, weak terminal] in
+            guard let coordinator, let terminal else { return }
+            coordinator.handleSize(from: terminal, shouldReplay: true)
+        }
         return terminal
     }
 
@@ -28,6 +32,8 @@ struct PreviewTerminalContainer: NSViewRepresentable {
             context.coordinator.session?.detachOutput()
             context.coordinator.session = session
             context.coordinator.resetSessionState()
+            context.coordinator.handleSize(from: nsView, shouldReplay: true)
+        } else if context.coordinator.hasStartedSession == false {
             context.coordinator.handleSize(from: nsView, shouldReplay: true)
         }
     }
@@ -47,7 +53,7 @@ struct PreviewTerminalContainer: NSViewRepresentable {
         weak var session: PreviewServiceSession?
         weak var terminal: TerminalView?
         private var frameObservers: [ObjectIdentifier: NSObjectProtocol] = [:]
-        private var hasStartedSession = false
+        fileprivate var hasStartedSession = false
 
         init(session: PreviewServiceSession) {
             self.session = session
@@ -105,6 +111,9 @@ struct PreviewTerminalContainer: NSViewRepresentable {
                         self?.feedTerminal(data)
                     }
                     session.updateWindowSize(cols: cols, rows: safeRows)
+                    if shouldReplay, !session.output.isEmpty {
+                        self.feedTerminal(session.output)
+                    }
                     return
                 }
 
