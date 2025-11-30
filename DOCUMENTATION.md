@@ -83,6 +83,9 @@
 - Starting Script: services persist per worktree, “Start preview” starts all enabled services, per-service start/stop works, and `.env` files are cleaned up/restored after stop.
 - Deleting a worktree stops its agent (if running), removes the worktree directory, and deletes the agent branch; missing worktree paths surface an inline warning.
 - Brand theme renders correctly (Ink/Midnight surfaces, Ion accents, custom SwiftTerm colors).
+- `swift test` runs unit + integration coverage:
+  - Preview path resolver (empty/relative/absolute root cases).
+  - Worktree integration in a temp git repo (create/delete managed worktree).
 
 ## Safe changes & guidelines
 - Preserve cleanup semantics: when removing an agent with a worktree, delete both worktree dir and agent branch.

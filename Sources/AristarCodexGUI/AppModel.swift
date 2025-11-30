@@ -303,11 +303,7 @@ final class AppModel: ObservableObject {
     }
 
     private func resolvedRootPath(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> String {
-        let trimmed = service.rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return worktree.path.path }
-        if trimmed.hasPrefix("/") { return trimmed }
-        let relative = trimmed.hasPrefix("./") ? String(trimmed.dropFirst(2)) : trimmed
-        return worktree.path.appendingPathComponent(relative).path
+        PreviewPathResolver.resolve(rootPath: service.rootPath, worktreePath: worktree.path.path)
     }
 
     // MARK: - Sessions

@@ -22,6 +22,13 @@ let package = Package(
                 .product(name: "SwiftTerm", package: "SwiftTerm")
             ],
             path: "Sources/AristarCodexGUI"
+        ),
+        .testTarget(
+            name: "AristarCodexGUITests",
+            dependencies: [
+                "AristarCodexGUI"
+            ],
+            path: "Tests/AristarCodexGUITests"
         )
     ]
 )
