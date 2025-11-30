@@ -1812,12 +1812,16 @@ private struct WorktreeRow: View {
 
                 Spacer()
                 if isRunning {
-                    Button(role: .destructive) {
+                    ActionPill(
+                        fill: .clear,
+                        stroke: BrandColor.berry,
+                        foreground: BrandColor.berry,
+                        padding: EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+                    ) {
                         onStop()
                     } label: {
                         Label("Stop", systemImage: "stop.fill")
                     }
-                    .buttonStyle(.brandDanger)
                 } else if !isInWorkingSet {
                     Button {
                         onAddToWorkingSet()
