@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published var selectedTab: HubTab = .hubs
     @Published var restoreError: String?
     @Published var hubError: String?
+    @Published var previewError: String?
+    @Published private(set) var previewSessions: [String: [UUID: PreviewServiceSession]] = [:]
 
     let codexAuth: CodexAuthManager
     private var managers: [String: CodexSessionManager] = [:]
@@ -198,8 +200,106 @@ final class AppModel: ObservableObject {
         guard let manager = manager(for: ref.url) else { return }
         let allManaged = manager.loadAllManagedWorktrees()
         for wt in allManaged {
+            stopPreview(for: wt)
             _ = manager.deleteWorktree(wt)
         }
+    }
+
+    // MARK: - Preview services
+
+    func previewConfigs(for worktree: ManagedWorktree, project: ProjectRef) -> [PreviewServiceConfig] {
+        guard let manager = manager(for: project.url) else { return worktree.previewServices }
+        if let meta = manager.loadMetadata(for: worktree.path) {
+            return meta.previewServices
+        }
+        return worktree.previewServices
+    }
+
+    func savePreviewConfigs(_ services: [PreviewServiceConfig], for worktree: ManagedWorktree, project: ProjectRef) -> ManagedWorktree {
+        guard let manager = manager(for: project.url) else { return worktree }
+        manager.updatePreviewServices(services, for: worktree)
+        var updated = worktree
+        updated.previewServices = services
+        refreshWorktree(updated, for: project)
+        return updated
+    }
+
+    func startPreview(for worktree: ManagedWorktree, services: [PreviewServiceConfig]) {
+        previewError = nil
+        let enabled = services.filter { $0.enabled }
+        guard !enabled.isEmpty else {
+            previewError = "Add and enable at least one service to start a preview."
+            return
+        }
+
+        for service in enabled {
+            _ = startPreviewService(service, worktree: worktree)
+        }
+    }
+
+    func startPreviewService(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> PreviewServiceSession? {
+        previewError = nil
+        let trimmed = service.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            previewError = "Command is required for \(service.name.isEmpty ? "a service" : service.name)."
+            return nil
+        }
+
+        let root = service.rootPath.isEmpty ? worktree.path.path : service.rootPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else {
+            previewError = "Root path for \(service.name.isEmpty ? "service" : service.name) is not a folder."
+            return nil
+        }
+
+        if isPreviewRunning(serviceID: service.id, worktree: worktree) {
+            return previewSessions[worktree.id]?[service.id]
+        }
+
+        let session = PreviewServiceSession(
+            serviceID: service.id,
+            name: service.name.isEmpty ? "Service" : service.name,
+            command: trimmed,
+            workingDirectory: URL(fileURLWithPath: root),
+            envText: service.envText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : service.envText
+        )
+        session.onExit = { [weak self] in
+            Task { @MainActor in
+                self?.previewSessions[worktree.id]?.removeValue(forKey: service.id)
+                if self?.previewSessions[worktree.id]?.isEmpty == true {
+                    self?.previewSessions.removeValue(forKey: worktree.id)
+                }
+            }
+        }
+        previewSessions[worktree.id, default: [:]][service.id] = session
+        return session
+    }
+
+    func stopPreviewService(_ serviceID: UUID, worktree: ManagedWorktree) {
+        if let session = previewSessions[worktree.id]?[serviceID] {
+            session.stop()
+        }
+        previewError = nil
+        previewSessions[worktree.id]?.removeValue(forKey: serviceID)
+        if previewSessions[worktree.id]?.isEmpty == true {
+            previewSessions.removeValue(forKey: worktree.id)
+        }
+    }
+
+    func stopPreview(for worktree: ManagedWorktree) {
+        if let sessions = previewSessions[worktree.id]?.values {
+            sessions.forEach { $0.stop() }
+        }
+        previewError = nil
+        previewSessions.removeValue(forKey: worktree.id)
+    }
+
+    func isPreviewRunning(for worktree: ManagedWorktree) -> Bool {
+        previewSessions[worktree.id]?.values.contains { $0.isRunning } ?? false
+    }
+
+    func isPreviewRunning(serviceID: UUID, worktree: ManagedWorktree) -> Bool {
+        previewSessions[worktree.id]?[serviceID]?.isRunning ?? false
     }
 
     // MARK: - Sessions
@@ -255,6 +355,7 @@ final class AppModel: ObservableObject {
             hubError = manager.lastWorktreeError
             log("[delete] Failed \(manager.lastWorktreeError ?? "unknown error") worktree=\(worktree.displayName)")
         }
+        stopPreview(for: worktree)
         removeFromWorkingSet(worktree: worktree, project: project)
         branchPanes = branchPanes.map { pane in
             var updated = pane
@@ -320,14 +421,16 @@ final class AppModel: ObservableObject {
                 path: url,
                 originalBranch: meta.originalBranch,
                 agentBranch: meta.agentBranch,
-                createdAt: meta.createdAt
+                createdAt: meta.createdAt,
+                previewServices: meta.previewServices
             )
         }
         return ManagedWorktree(
             path: url,
             originalBranch: item.originalBranch,
             agentBranch: item.agentBranch,
-            createdAt: nil
+            createdAt: nil,
+            previewServices: []
         )
     }
 

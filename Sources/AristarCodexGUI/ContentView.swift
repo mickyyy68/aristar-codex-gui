@@ -749,6 +749,11 @@ private struct WorktreeDetailView: View {
 
 // MARK: - Working set
 
+private enum WorkingSetDetailTab: String, CaseIterable {
+    case agent = "Agent"
+    case preview = "Preview"
+}
+
 private struct WorkingSetPage: View {
     @ObservedObject var model: AppModel
 
@@ -893,7 +898,7 @@ private struct WorkingSetDetail: View {
 
     var body: some View {
         if let item = model.selectedWorkingSetItem, let wt = model.worktree(from: item) {
-            WorkingSetDetailBody(model: model, item: item, worktree: wt)
+            WorktreeDetailTabs(model: model, item: item, worktree: wt)
                 .brandPanel()
                 .shadow(color: .clear, radius: 0)
         } else if model.workingSet.isEmpty {
@@ -921,7 +926,105 @@ private struct WorkingSetDetail: View {
     }
 }
 
-private struct WorkingSetDetailBody: View {
+private struct WorktreeDetailTabs: View {
+    @ObservedObject var model: AppModel
+    let item: WorkingSetItem
+    @State private var worktree: ManagedWorktree
+    @State private var tab: WorkingSetDetailTab = .agent
+    @State private var previewServices: [PreviewServiceConfig]
+    @State private var hasLoadedPreview = false
+
+    init(model: AppModel, item: WorkingSetItem, worktree: ManagedWorktree) {
+        self.model = model
+        self.item = item
+        _worktree = State(initialValue: worktree)
+        let previews = model.previewConfigs(for: worktree, project: item.project)
+        _previewServices = State(initialValue: previews)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WorktreeHeader(item: item, worktree: worktree)
+
+            Picker("", selection: $tab) {
+                ForEach(WorkingSetDetailTab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue)
+                        .tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 280)
+
+            switch tab {
+            case .agent:
+                AgentDetailView(model: model, item: item, worktree: worktree)
+            case .preview:
+                PreviewDetailView(model: model, item: item, worktree: $worktree, services: $previewServices)
+            }
+        }
+        .padding()
+        .onAppear { reloadPreview() }
+        .onChange(of: item.id) { _ in
+            tab = .agent
+            reloadPreview()
+        }
+        .onChange(of: worktree.id) { _ in
+            tab = .agent
+            reloadPreview()
+        }
+        .onChange(of: previewServices) { services in
+            guard hasLoadedPreview else { return }
+            worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
+        }
+    }
+
+    private func reloadPreview() {
+        model.previewError = nil
+        previewServices = model.previewConfigs(for: worktree, project: item.project)
+        hasLoadedPreview = true
+    }
+}
+
+private struct WorktreeHeader: View {
+    let item: WorkingSetItem
+    let worktree: ManagedWorktree
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(worktree.displayName)
+                .font(BrandFont.display(size: 18, weight: .semibold))
+                .foregroundStyle(BrandColor.flour)
+            HStack(spacing: 8) {
+                Label(item.project.name, systemImage: "folder")
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(BrandColor.midnight))
+                    .foregroundStyle(BrandColor.flour)
+                Label(item.originalBranch, systemImage: "arrow.triangle.branch")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 6) {
+                Text(worktree.path.path)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    copyPath(worktree.path.path)
+                } label: {
+                    Label("Copy path", systemImage: "doc.on.doc")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .help("Copy path")
+            }
+        }
+    }
+}
+
+private struct AgentDetailView: View {
     @ObservedObject var model: AppModel
     let item: WorkingSetItem
     let worktree: ManagedWorktree
@@ -932,71 +1035,38 @@ private struct WorkingSetDetailBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(worktree.displayName)
-                        .font(BrandFont.display(size: 18, weight: .semibold))
-                        .foregroundStyle(BrandColor.flour)
-                    HStack(spacing: 8) {
-                        Label(item.project.name, systemImage: "folder")
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(BrandColor.midnight))
-                            .foregroundStyle(BrandColor.flour)
-                        Label(item.originalBranch, systemImage: "arrow.triangle.branch")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                if running {
+                    Button(role: .destructive) {
+                        model.stop(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
                     }
-                    HStack(spacing: 6) {
-                        Text(worktree.path.path)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Button {
-                            copyPath(worktree.path.path)
-                        } label: {
-                            Label("Copy path", systemImage: "doc.on.doc")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Copy path")
+                    .buttonStyle(.brandDanger)
+
+                    Button {
+                        _ = model.resume(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Resume", systemImage: "clock.arrow.circlepath")
                     }
+                    .buttonStyle(.brandGhost)
+                } else {
+                    Button {
+                        _ = model.launch(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Start agent", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.brandPrimary)
+
+                    Button {
+                        _ = model.resume(worktree: worktree, project: item.project)
+                    } label: {
+                        Label("Resume", systemImage: "clock.arrow.circlepath")
+                    }
+                    .buttonStyle(.brandGhost)
                 }
+
                 Spacer()
-                HStack(spacing: 8) {
-                    Spacer()
-                    if running {
-                        Button(role: .destructive) {
-                            model.stop(worktree: worktree, project: item.project)
-                        } label: {
-                            Label("Stop", systemImage: "stop.fill")
-                        }
-                        .buttonStyle(.brandDanger)
-
-                        Button {
-                            _ = model.resume(worktree: worktree, project: item.project)
-                        } label: {
-                            Label("Resume", systemImage: "clock.arrow.circlepath")
-                        }
-                        .buttonStyle(.brandGhost)
-                    } else {
-                        Button {
-                            _ = model.launch(worktree: worktree, project: item.project)
-                        } label: {
-                            Label("Start agent", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.brandPrimary)
-
-                        Button {
-                            _ = model.resume(worktree: worktree, project: item.project)
-                        } label: {
-                            Label("Resume", systemImage: "clock.arrow.circlepath")
-                        }
-                        .buttonStyle(.brandGhost)
-                    }
-                }
             }
 
             Divider()
@@ -1019,7 +1089,280 @@ private struct WorkingSetDetailBody: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .padding()
+    }
+}
+
+private struct PreviewDetailView: View {
+    @ObservedObject var model: AppModel
+    let item: WorkingSetItem
+    @Binding var worktree: ManagedWorktree
+    @Binding var services: [PreviewServiceConfig]
+
+    private var runningSessions: [PreviewServiceSession] {
+        let sessions = model.previewSessions[worktree.id] ?? [:]
+        return Array(sessions.values).sorted { $0.name < $1.name }
+    }
+
+    private func isValidRoot(_ path: String) -> Bool {
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    private func canStartPreview() -> Bool {
+        let enabled = services.filter { $0.enabled }
+        guard !enabled.isEmpty else { return false }
+        return enabled.allSatisfy { service in
+            !service.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            isValidRoot(service.rootPath.isEmpty ? worktree.path.path : service.rootPath)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Label("Starting Script", systemImage: "sparkles.rectangle.stack")
+                    .font(BrandFont.ui(size: 14, weight: .semibold))
+                    .foregroundStyle(BrandColor.flour)
+                Spacer()
+                Button {
+                    var service = PreviewServiceConfig()
+                    service.name = "Service \(services.count + 1)"
+                    service.rootPath = worktree.path.path
+                    services.append(service)
+                } label: {
+                    Label("Add service", systemImage: "plus")
+                }
+                .buttonStyle(.brandGhost)
+            }
+
+            if services.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "text.badge.plus")
+                        .foregroundStyle(.secondary)
+                    Text("Add services to define your preview.")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                }
+                .frame(maxWidth: .infinity, minHeight: 120)
+                .background(
+                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                        .fill(BrandColor.midnight.opacity(0.7))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                        .stroke(BrandColor.orbit.opacity(0.2), lineWidth: 1)
+                )
+            } else {
+                VStack(spacing: 10) {
+                    ForEach($services) { $service in
+                        let isRunning = model.isPreviewRunning(serviceID: service.id, worktree: worktree)
+                        PreviewServiceRow(
+                            service: $service,
+                            defaultRoot: worktree.path.path,
+                            isRunning: isRunning,
+                            onStart: {
+                                worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
+                                _ = model.startPreviewService(service, worktree: worktree)
+                            },
+                            onStop: {
+                                model.stopPreviewService(service.id, worktree: worktree)
+                            },
+                            onRemove: {
+                                services.removeAll { $0.id == service.id }
+                            }
+                        )
+                    }
+                }
+            }
+
+            if let error = model.previewError {
+                BannerView(text: error, systemImage: "exclamationmark.triangle.fill", tint: BrandColor.citrus)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
+                    model.startPreview(for: worktree, services: services)
+                } label: {
+                    Label("Start preview", systemImage: "play.fill")
+                }
+                .buttonStyle(.brandPrimary)
+                .disabled(!canStartPreview())
+
+                Button(role: .destructive) {
+                    model.stopPreview(for: worktree)
+                } label: {
+                    Label("Stop all", systemImage: "stop.fill")
+                }
+                .buttonStyle(.brandDanger)
+                .disabled(runningSessions.isEmpty)
+
+                Spacer()
+            }
+
+            Divider()
+
+            if runningSessions.isEmpty {
+                Text("No preview services running.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            } else {
+                let columns = runningSessions.count > 1 ? [GridItem(.flexible()), GridItem(.flexible())] : [GridItem(.flexible())]
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(runningSessions) { session in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(session.isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
+                                    .frame(width: 10, height: 10)
+                                Text(session.name)
+                                    .font(BrandFont.ui(size: 13, weight: .semibold))
+                                    .foregroundStyle(BrandColor.flour)
+                                Spacer()
+                                Button(role: .destructive) {
+                                    model.stopPreviewService(session.serviceID, worktree: worktree)
+                                } label: {
+                                    Image(systemName: "stop.circle")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(BrandColor.berry)
+                            }
+
+                            PreviewTerminalContainer(session: session)
+                                .frame(minHeight: 220)
+                                .background(
+                                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                                        .fill(BrandColor.midnight.opacity(0.8))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                                        .stroke(BrandColor.orbit.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct PreviewServiceRow: View {
+    @Binding var service: PreviewServiceConfig
+    let defaultRoot: String
+    let isRunning: Bool
+    let onStart: () -> Void
+    let onStop: () -> Void
+    let onRemove: () -> Void
+
+    private func pickFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: defaultRoot)
+        panel.begin { response in
+            if response == .OK, let url = panel.urls.first {
+                service.rootPath = url.path
+            }
+        }
+    }
+
+    private var hasCommand: Bool {
+        !service.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var hasValidRoot: Bool {
+        let path = service.rootPath.isEmpty ? defaultRoot : service.rootPath
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Toggle(isOn: $service.enabled) {
+                    Text(service.name.isEmpty ? "Service" : service.name)
+                        .font(BrandFont.ui(size: 13, weight: .semibold))
+                        .foregroundStyle(BrandColor.flour)
+                }
+                Spacer()
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(BrandColor.berry)
+            }
+
+            TextField("Service name", text: $service.name)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 8) {
+                TextField("Root directory", text: $service.rootPath, prompt: Text(defaultRoot))
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    pickFolder()
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .buttonStyle(.borderless)
+            }
+
+            TextField("Command to run (e.g., cd backend && pnpm install && pnpm run dev)", text: $service.command)
+                .textFieldStyle(.roundedBorder)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Env (optional)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: $service.envText)
+                    .frame(minHeight: 80)
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                            .fill(BrandColor.midnight.opacity(0.8))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                            .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
+                    )
+            }
+
+            HStack(spacing: 10) {
+                if isRunning {
+                    Button(role: .destructive) {
+                        onStop()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.brandDanger)
+                } else {
+                    Button {
+                        onStart()
+                    } label: {
+                        Label("Start", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.brandPrimary)
+                    .disabled(!service.enabled || !hasCommand || !hasValidRoot)
+                }
+
+                Spacer()
+
+                Circle()
+                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
+                    .frame(width: 10, height: 10)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                .fill(BrandColor.midnight.opacity(0.8))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
+        )
     }
 }
 
