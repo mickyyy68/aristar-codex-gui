@@ -122,7 +122,7 @@ final class CodexSessionManager: ObservableObject {
         case .success:
             let metadata = WorktreeMetadata(originalBranch: branch, agentBranch: agentBranch, createdAt: Date())
             persistMetadata(metadata, at: worktreeDir)
-            let managed = ManagedWorktree(path: worktreeDir, originalBranch: branch, agentBranch: agentBranch, createdAt: metadata.createdAt)
+            let managed = ManagedWorktree(path: worktreeDir, originalBranch: branch, agentBranch: agentBranch, createdAt: metadata.createdAt, previewServices: metadata.previewServices)
             managedWorktrees.append(managed)
             return managed
         case .failure(let err):
@@ -155,7 +155,8 @@ final class CodexSessionManager: ObservableObject {
                     path: url,
                     originalBranch: meta.originalBranch,
                     agentBranch: meta.agentBranch,
-                    createdAt: meta.createdAt
+                    createdAt: meta.createdAt,
+                    previewServices: meta.previewServices
                 )
             }
 
@@ -177,7 +178,8 @@ final class CodexSessionManager: ObservableObject {
                 path: url,
                 originalBranch: inferredBranch.isEmpty ? branch : inferredBranch,
                 agentBranch: name,
-                createdAt: created
+                createdAt: created,
+                previewServices: []
             )
         }
 
@@ -203,7 +205,8 @@ final class CodexSessionManager: ObservableObject {
                     path: url,
                     originalBranch: meta.originalBranch,
                     agentBranch: meta.agentBranch,
-                    createdAt: meta.createdAt
+                    createdAt: meta.createdAt,
+                    previewServices: meta.previewServices
                 )
             }
 
@@ -222,7 +225,8 @@ final class CodexSessionManager: ObservableObject {
                 path: url,
                 originalBranch: inferredBranch.isEmpty ? "" : inferredBranch,
                 agentBranch: name,
-                createdAt: created
+                createdAt: created,
+                previewServices: []
             )
         }
 
@@ -234,6 +238,16 @@ final class CodexSessionManager: ObservableObject {
         let metaURL = metadataURL(for: worktreeURL)
         guard let data = try? Data(contentsOf: metaURL) else { return nil }
         return try? JSONDecoder().decode(WorktreeMetadata.self, from: data)
+    }
+
+    func updatePreviewServices(_ services: [PreviewServiceConfig], for worktree: ManagedWorktree) {
+        var meta = loadMetadata(for: worktree.path) ?? WorktreeMetadata(
+            originalBranch: worktree.originalBranch,
+            agentBranch: worktree.agentBranch,
+            createdAt: worktree.createdAt ?? Date()
+        )
+        meta.previewServices = services
+        persistMetadata(meta, at: worktree.path)
     }
 
     func startSession(for worktree: ManagedWorktree) -> CodexSession {
