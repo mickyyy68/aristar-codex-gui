@@ -47,6 +47,7 @@
 - `HubModels.swift` – data models for projects, branch panes, working-set items, tab selection.
 - `ProjectListStore.swift` – persistence for favorites/recents.
 - `WorkingSetStore.swift` – persistence for working worktrees.
+- `PreviewServiceSession.swift`, `PreviewTerminalContainer.swift` – per-service preview processes + SwiftTerm bridges for Starting Script.
 
 ## Behavioral details
 - Worktree root per project: `~/.aristar-codex-gui/worktrees/<project-name>-<hash>/…`.
@@ -65,6 +66,7 @@
 - Visual language: dark “Ink” base with “Midnight” panels, “Ion” accents/CTAs, rounded pills/cards, and a custom SwiftTerm theme (Ink background, Flour text, Ion cursor, Icing selection). Shared button styles (primary/ghost/danger) and pills live in `BrandStyle.swift`; current styling uses minimal/no glow and softer borders/fills for selection states.
 - Hubs sidebar matches the Working Set “inbox” list: project rows show a status dot, project name/path, star toggle (favorites), and delete action; selected rows highlight with a leading Ion bar. Project count is shown as a pill in the header.
 - Favorites are removed from recents; removing a favorite re-adds it to recents. A “Remove project” action deletes all Aristar-managed worktrees/branches for that project and clears it from favorites/recents, branch panes, and working set.
+- Starting Script previews live in the Working Set detail’s “Preview” tab (Cmd+4; Agent tab Cmd+3): per-worktree services store name, root (relative to worktree; empty means worktree root), command, optional env text, and enabled toggle. Services can be started/stopped individually or via a single Start Preview/Stop All toggle; each service runs in its own SwiftTerm terminal. Optional env text writes a temporary `.env` into the service root (backing up any existing `.env`), then removes/restores on stop/exit. Only one preview run per service/worktree is allowed at a time.
 - Starting Script previews live in the Working Set detail’s “Preview” tab: per-worktree services (name, root dir, command, optional env text, enabled toggle) are stored in worktree metadata; “Start preview” launches all enabled services, and each service can be started/stopped individually. Each service runs in its own SwiftTerm terminal (split grid), and only one instance per service/worktree runs at a time. Optional env text is written to a `.env` file in the service root (backing up any existing `.env`), then removed/restored on stop/exit.
 
 ## Known gaps / TODOs

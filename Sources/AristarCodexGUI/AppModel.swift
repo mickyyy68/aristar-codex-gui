@@ -245,7 +245,7 @@ final class AppModel: ObservableObject {
             return nil
         }
 
-        let root = service.rootPath.isEmpty ? worktree.path.path : service.rootPath
+        let root = resolvedRootPath(service, worktree: worktree)
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else {
             previewError = "Root path for \(service.name.isEmpty ? "service" : service.name) is not a folder."
@@ -300,6 +300,14 @@ final class AppModel: ObservableObject {
 
     func isPreviewRunning(serviceID: UUID, worktree: ManagedWorktree) -> Bool {
         previewSessions[worktree.id]?[serviceID]?.isRunning ?? false
+    }
+
+    private func resolvedRootPath(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> String {
+        let trimmed = service.rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return worktree.path.path }
+        if trimmed.hasPrefix("/") { return trimmed }
+        let relative = trimmed.hasPrefix("./") ? String(trimmed.dropFirst(2)) : trimmed
+        return worktree.path.appendingPathComponent(relative).path
     }
 
     // MARK: - Sessions

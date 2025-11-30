@@ -1005,6 +1005,7 @@ private struct WorktreeTabSwitcher: View {
                 }
                 .buttonStyle(.plain)
                 .brandPill(active: isActive)
+                .keyboardShortcut(tab == .agent ? "3" : "4", modifiers: .command)
             }
         }
         .padding(6)
@@ -1138,6 +1139,14 @@ private struct PreviewDetailView: View {
         return Array(sessions.values).sorted { $0.name < $1.name }
     }
 
+    private func resolvedRoot(for service: PreviewServiceConfig) -> String {
+        let trimmed = service.rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return worktree.path.path }
+        if trimmed.hasPrefix("/") { return trimmed }
+        let relative = trimmed.hasPrefix("./") ? String(trimmed.dropFirst(2)) : trimmed
+        return worktree.path.appendingPathComponent(relative).path
+    }
+
     private func isValidRoot(_ path: String) -> Bool {
         var isDir: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
@@ -1148,29 +1157,41 @@ private struct PreviewDetailView: View {
         guard !enabled.isEmpty else { return false }
         return enabled.allSatisfy { service in
             !service.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            isValidRoot(service.rootPath.isEmpty ? worktree.path.path : service.rootPath)
+            isValidRoot(resolvedRoot(for: service))
         }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
                     Label("Starting Script", systemImage: "sparkles.rectangle.stack")
-                        .font(BrandFont.ui(size: 14, weight: .semibold))
+                        .font(BrandFont.ui(size: 15, weight: .semibold))
                         .foregroundStyle(BrandColor.flour)
                     Spacer()
                     Button {
+                        worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
+                        if runningSessions.isEmpty {
+                            model.startPreview(for: worktree, services: services)
+                        } else {
+                            model.stopPreview(for: worktree)
+                        }
+                    } label: {
+                        Label(runningSessions.isEmpty ? "Start preview" : "Stop all", systemImage: runningSessions.isEmpty ? "play.fill" : "stop.fill")
+                    }
+                    .buttonStyle(runningSessions.isEmpty ? .brandPrimary : .brandDanger)
+
+                    Button {
                         var service = PreviewServiceConfig()
-                    service.name = "Service \(services.count + 1)"
-                    service.rootPath = worktree.path.path
-                    services.append(service)
-                    expanded.insert(service.id)
-                } label: {
-                    Label("Add service", systemImage: "plus")
+                        service.name = "Service \(services.count + 1)"
+                        service.rootPath = worktree.path.path
+                        services.append(service)
+                        expanded.insert(service.id)
+                    } label: {
+                        Label("Add service", systemImage: "plus")
+                    }
+                    .buttonStyle(.brandGhost)
                 }
-                .buttonStyle(.brandGhost)
-            }
 
                 if services.isEmpty {
                     VStack(spacing: 8) {
@@ -1181,16 +1202,9 @@ private struct PreviewDetailView: View {
                             .font(.caption)
                     }
                     .frame(maxWidth: .infinity, minHeight: 120)
-                    .background(
-                        RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                            .fill(BrandColor.midnight.opacity(0.7))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                            .stroke(BrandColor.orbit.opacity(0.2), lineWidth: 1)
-                    )
+                    .brandCard()
                 } else {
-                    let columns = [GridItem(.adaptive(minimum: 420), spacing: 12)]
+                    let columns = [GridItem(.adaptive(minimum: 440), spacing: 12)]
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(Array(services.indices), id: \.self) { index in
                             let binding = $services[index]
@@ -1231,75 +1245,65 @@ private struct PreviewDetailView: View {
                     BannerView(text: error, systemImage: "exclamationmark.triangle.fill", tint: BrandColor.citrus)
                 }
 
-                HStack(spacing: 8) {
-                    Button {
-                        worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
-                        model.startPreview(for: worktree, services: services)
-                    } label: {
-                        Label("Start preview", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.brandPrimary)
-                    .disabled(!canStartPreview())
-
-                    Button(role: .destructive) {
-                        model.stopPreview(for: worktree)
-                    } label: {
-                        Label("Stop all", systemImage: "stop.fill")
-                    }
-                    .buttonStyle(.brandDanger)
-                    .disabled(runningSessions.isEmpty)
-
-                    Spacer()
-                }
-
-                Divider()
-
-                if runningSessions.isEmpty {
-                    Text("No preview services running.")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                } else {
-                    let columns = runningSessions.count > 1 ? [GridItem(.flexible()), GridItem(.flexible())] : [GridItem(.flexible())]
-                    LazyVGrid(columns: columns, spacing: 12) {
-                        ForEach(runningSessions) { session in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    Circle()
-                                        .fill(session.isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
-                                        .frame(width: 10, height: 10)
-                                    Text(session.name)
-                                        .font(BrandFont.ui(size: 13, weight: .semibold))
-                                        .foregroundStyle(BrandColor.flour)
-                                    Spacer()
-                                    Button(role: .destructive) {
-                                        model.stopPreviewService(session.serviceID, worktree: worktree)
-                                    } label: {
-                                        Image(systemName: "stop.circle")
-                                    }
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(BrandColor.berry)
-                                }
-
-                                PreviewTerminalContainer(session: session)
-                                    .frame(minHeight: 220)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                                            .fill(BrandColor.midnight.opacity(0.8))
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                                            .stroke(BrandColor.orbit.opacity(0.2), lineWidth: 1)
-                                    )
-                            }
-                        }
-                    }
-                }
+                PreviewTerminalGrid(model: model, worktree: worktree, runningSessions: runningSessions)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.bottom, 4)
         }
         .onAppear {
-            expanded.formUnion(services.map { $0.id })
+            expanded = []
+        }
+    }
+}
+
+private struct PreviewTerminalGrid: View {
+    @ObservedObject var model: AppModel
+    let worktree: ManagedWorktree
+    let runningSessions: [PreviewServiceSession]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+            if runningSessions.isEmpty {
+                Text("No preview services running.")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            } else {
+                let columns = runningSessions.count > 1 ? [GridItem(.flexible()), GridItem(.flexible())] : [GridItem(.flexible())]
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(runningSessions) { session in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(session.isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
+                                    .frame(width: 10, height: 10)
+                                Text(session.name)
+                                    .font(BrandFont.ui(size: 13, weight: .semibold))
+                                    .foregroundStyle(BrandColor.flour)
+                                Spacer()
+                                Button(role: .destructive) {
+                                    model.stopPreviewService(session.serviceID, worktree: worktree)
+                                } label: {
+                                    Image(systemName: "stop.circle")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(BrandColor.berry)
+                            }
+
+                            PreviewTerminalContainer(session: session)
+                                .frame(minHeight: 220)
+                                .background(
+                                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                                        .fill(BrandColor.midnight.opacity(0.8))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                                        .stroke(BrandColor.orbit.opacity(0.2), lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1309,6 +1313,8 @@ private struct PreviewServiceCard: View {
     let defaultRoot: String
     let isRunning: Bool
     @Binding var isExpanded: Bool
+    @State private var showEnv: Bool = false
+    @State private var confirmDelete: Bool = false
     let onStart: () -> Void
     let onStop: () -> Void
     let onRemove: () -> Void
@@ -1330,51 +1336,113 @@ private struct PreviewServiceCard: View {
         !service.command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var resolvedRoot: String {
+        let trimmed = service.rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return defaultRoot }
+        if trimmed.hasPrefix("/") { return trimmed }
+        let relative = trimmed.hasPrefix("./") ? String(trimmed.dropFirst(2)) : trimmed
+        return URL(fileURLWithPath: defaultRoot).appendingPathComponent(relative).path
+    }
+
     private var hasValidRoot: Bool {
-        let path = service.rootPath.isEmpty ? defaultRoot : service.rootPath
+        let path = resolvedRoot
         var isDir: ObjCBool = false
         return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+    }
+
+    private var displayPath: String {
+        let trimmed = service.rootPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "./" }
+        if trimmed.hasPrefix("/") {
+            if trimmed.hasPrefix(defaultRoot) {
+                let rel = trimmed.replacingOccurrences(of: defaultRoot, with: "")
+                let trimmedRel = rel.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                return "./\(trimmedRel.isEmpty ? "." : trimmedRel)"
+            }
+            return trimmed
+        }
+        if trimmed.hasPrefix("./") { return trimmed }
+        return "./\(trimmed)"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Toggle(isOn: $service.enabled) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(service.name.isEmpty ? "Service" : service.name)
                         .font(BrandFont.ui(size: 13, weight: .semibold))
                         .foregroundStyle(BrandColor.flour)
-                }
-                .toggleStyle(.switch)
-                Spacer()
-                Circle()
-                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
-                    .frame(width: 10, height: 10)
-                Button {
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    Text(displayPath)
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .buttonStyle(.plain)
-                Button(role: .destructive) {
-                    onRemove()
-                } label: {
-                    Image(systemName: "trash")
+                Spacer()
+                Toggle("Include", isOn: $service.enabled)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .help("Include in Start preview")
+                    .frame(width: 46)
+                HStack(spacing: 8) {
+                    if isRunning {
+                        Button(role: .destructive) {
+                            onStop()
+                        } label: {
+                            Image(systemName: "stop.fill")
+                        }
+                        .buttonStyle(.brandDanger)
+                        .help("Stop this service")
+                    } else {
+                        Button {
+                            onStart()
+                        } label: {
+                            Image(systemName: "play.fill")
+                        }
+                        .buttonStyle(.brandPrimary)
+                        .disabled(!service.enabled || !hasCommand || !hasValidRoot)
+                        .help("Start this service")
+                    }
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.brandGhost)
+                    .help(isExpanded ? "Hide service config" : "Edit service config")
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(BrandColor.berry)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "command")
+                    .foregroundStyle(.secondary)
+                Text(service.command.isEmpty ? "Add a command" : service.command)
+                    .font(.caption)
+                    .foregroundStyle(service.command.isEmpty ? .secondary : BrandColor.flour)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
             }
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 10) {
-                    TextField("Service name", text: $service.name)
-                        .textFieldStyle(.roundedBorder)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Name")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextField("Service name", text: $service.name)
+                            .textFieldStyle(BrandFieldStyle())
+                    }
 
                     HStack(spacing: 8) {
-                        TextField("Root directory", text: $service.rootPath, prompt: Text(defaultRoot))
-                            .textFieldStyle(.roundedBorder)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Root")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextField("Relative to worktree (e.g. frontend)", text: $service.rootPath, prompt: Text("Relative to worktree (e.g. ./frontend)"))
+                                .textFieldStyle(BrandFieldStyle())
+                        }
                         Button {
                             pickFolder()
                         } label: {
@@ -1383,46 +1451,52 @@ private struct PreviewServiceCard: View {
                         .buttonStyle(.borderless)
                     }
 
-                    TextField("Command to run (e.g., cd backend && pnpm install && pnpm run dev)", text: $service.command)
-                        .textFieldStyle(.roundedBorder)
-
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Env (optional)")
+                        Text("Command")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextEditor(text: $service.envText)
-                            .frame(minHeight: 80)
-                            .padding(6)
-                            .background(
-                                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
-                                    .fill(BrandColor.midnight.opacity(0.8))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
-                                    .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
-                            )
+                        TextField("Command to run (e.g., cd backend && pnpm install && pnpm run dev)", text: $service.command)
+                            .textFieldStyle(BrandFieldStyle())
                     }
 
-                    HStack(spacing: 10) {
-                        if isRunning {
-                            Button(role: .destructive) {
-                                onStop()
-                            } label: {
-                                Label("Stop", systemImage: "stop.fill")
-                            }
-                            .buttonStyle(.brandDanger)
-                        } else {
-                            Button {
-                                onStart()
-                            } label: {
-                                Label("Start", systemImage: "play.fill")
-                            }
-                            .buttonStyle(.brandPrimary)
-                            .disabled(!service.enabled || !hasCommand || !hasValidRoot)
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.9)) {
+                            showEnv.toggle()
                         }
-
-                        Spacer()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "leaf")
+                            Text(showEnv ? "Hide env" : "Edit env")
+                        }
                     }
+                    .buttonStyle(.brandGhost)
+
+                    if showEnv {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Env (optional)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            TextEditor(text: $service.envText)
+                                .frame(minHeight: 80)
+                                .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                                        .fill(BrandColor.midnight.opacity(0.8))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                                        .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
+                                )
+                        }
+                        .transition(.opacity.combined(with: .slide))
+                    }
+                    Button(role: .destructive) {
+                        confirmDelete = true
+                    } label: {
+                        Label("Delete service", systemImage: "trash")
+                    }
+                    .buttonStyle(.brandDanger)
+                    .help("Delete this service")
                 }
                 .transition(.opacity.combined(with: .slide))
             }
@@ -1430,12 +1504,22 @@ private struct PreviewServiceCard: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                .fill(BrandColor.midnight.opacity(0.85))
+                .fill(BrandColor.midnight.opacity(0.9))
         )
         .overlay(
             RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
+                .stroke(BrandColor.orbit.opacity(0.3), lineWidth: 1)
         )
+        .confirmationDialog(
+            "Delete this service?",
+            isPresented: $confirmDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) { onRemove() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the service from the Starting Script.")
+        }
     }
 }
 
@@ -1628,4 +1712,22 @@ private func copyPath(_ path: String) {
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
     pasteboard.setString(path, forType: .string)
+}
+
+private struct BrandFieldStyle: TextFieldStyle {
+    func _body(configuration: TextField<Self._Label>) -> some View {
+        configuration
+            .textFieldStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(
+                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                    .fill(BrandColor.midnight.opacity(0.9))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                    .stroke(BrandColor.orbit.opacity(0.35), lineWidth: 1)
+            )
+            .foregroundStyle(BrandColor.flour)
+    }
 }
