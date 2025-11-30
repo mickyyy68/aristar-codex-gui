@@ -40,6 +40,7 @@
 - `CodexSessionView.swift` – session detail with terminal.
 - `FolderPickerButton.swift`, `BranchCreationView.swift` – UI components.
 - `ManagedWorktree.swift` – models worktree metadata for UI.
+- `BrandStyle.swift` – design tokens (colors, radii, typography helpers, button styles) shared across views.
 - `ProjectStateStore.swift` – per-project persistence for base branch + selected worktree.
 - `RecentProjectStore.swift` – persistence helper for last opened project path.
 - `HubModels.swift` – data models for projects, branch panes, working-set items, tab selection.
@@ -60,10 +61,14 @@
 - Selection: Hubs tab shows project lists and branch panes; each pane lists managed worktrees for a branch with per-row actions and delete confirmation. Working Set tab uses a sidebar list + detail pane to manage pinned worktrees across projects.
 - Navigation: Cmd+1 switches to Hubs; Cmd+2 switches to Working Set.
 - Error surfacing: worktree creation errors and missing persisted worktrees surface inline; codex binary missing errors surfaced via auth status.
+- Visual language: dark “Ink” base with “Midnight” panels, “Ion” accents/CTAs, rounded pills/cards, and a custom SwiftTerm theme (Ink background, Flour text, Ion cursor, Icing selection). Shared button styles (primary/ghost/danger) and pills live in `BrandStyle.swift`; current styling uses minimal/no glow and softer borders/fills for selection states.
+- Hubs sidebar matches the Working Set “inbox” list: project rows show a status dot, project name/path, star toggle (favorites), and delete action; selected rows highlight with a leading Ion bar. Project count is shown as a pill in the header.
+- Favorites are removed from recents; removing a favorite re-adds it to recents. A “Remove project” action deletes all Aristar-managed worktrees/branches for that project and clears it from favorites/recents, branch panes, and working set.
 
 ## Known gaps / TODOs
-- ANSI/OSC passthrough is delegated to SwiftTerm; no custom color theme yet.
+- ANSI/OSC passthrough is delegated to SwiftTerm.
 - No settings UI for Codex binary path or profile; binary auto-resolve only.
+- Custom font files are not bundled; UI uses rounded system fonts tuned to the brand until fonts are added.
 - SwiftTerm warning about README resource is harmless; could be excluded if desired.
 
 ## Validation
@@ -72,6 +77,7 @@
 - Adding a worktree to the Working Set reflects immediately; removal updates persistence.
 - Launch/stop from branch panes and Working Set act on the correct project/branch and reflect running status.
 - Deleting a worktree stops its agent (if running), removes the worktree directory, and deletes the agent branch; missing worktree paths surface an inline warning.
+- Brand theme renders correctly (Ink/Midnight surfaces, Ion accents, custom SwiftTerm colors).
 
 ## Safe changes & guidelines
 - Preserve cleanup semantics: when removing an agent with a worktree, delete both worktree dir and agent branch.

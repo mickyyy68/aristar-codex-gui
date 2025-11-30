@@ -7,14 +7,20 @@ struct BranchCreationView: View {
     @State private var selectedBranch: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(BrandColor.ion.opacity(0.18))
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(BrandColor.ion)
+                }
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Launch an agent from a branch")
-                        .font(.headline)
+                        .font(BrandFont.display(size: 16, weight: .semibold))
+                        .foregroundStyle(BrandColor.flour)
                     Text("Creates a dedicated worktree so the branch stays isolated while you chat.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -33,6 +39,9 @@ struct BranchCreationView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .brandPanel(cornerRadius: BrandRadius.md)
 
                 Button {
                     guard !selectedBranch.isEmpty else { return }
@@ -41,22 +50,23 @@ struct BranchCreationView: View {
                     Label("Create Agent", systemImage: "person.badge.plus")
                         .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.brandPrimary)
                 .disabled(selectedBranch.isEmpty)
+                .opacity(selectedBranch.isEmpty ? 0.6 : 1)
             }
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundColor(.red)
+                    .foregroundColor(BrandColor.berry)
                     .textSelection(.enabled)
+                    .padding(10)
+                    .brandPanel(cornerRadius: BrandRadius.sm)
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.gray.opacity(0.08))
-        )
+        .padding(14)
+        .brandPanel()
+        .brandShadow(.soft)
         .onAppear {
             if selectedBranch.isEmpty {
                 selectedBranch = branches.first ?? ""

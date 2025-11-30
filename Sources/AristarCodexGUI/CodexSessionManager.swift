@@ -185,6 +185,51 @@ final class CodexSessionManager: ObservableObject {
         return filtered
     }
 
+    func loadAllManagedWorktrees() -> [ManagedWorktree] {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: worktreesRoot, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) else {
+            return []
+        }
+
+        let all: [ManagedWorktree] = contents.compactMap { url in
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+                return nil
+            }
+
+            let metaURL = metadataURL(for: url)
+            if let data = try? Data(contentsOf: metaURL),
+               let meta = try? JSONDecoder().decode(WorktreeMetadata.self, from: data) {
+                return ManagedWorktree(
+                    path: url,
+                    originalBranch: meta.originalBranch,
+                    agentBranch: meta.agentBranch,
+                    createdAt: meta.createdAt
+                )
+            }
+
+            let name = url.lastPathComponent
+            let parts = name.split(separator: "-")
+            let isLegacyAgent = parts.first == "agent"
+            let isManaged = name.hasPrefix(Self.managedPrefix)
+            guard isLegacyAgent || isManaged else { return nil }
+
+            let safeBranch = parts.count >= 3 ? parts[parts.count - 2] : Substring("")
+            let inferredBranch = safeBranch.replacingOccurrences(of: "-", with: "/")
+            let values = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+            let created = values?.creationDate ?? values?.contentModificationDate
+
+            return ManagedWorktree(
+                path: url,
+                originalBranch: inferredBranch.isEmpty ? "" : inferredBranch,
+                agentBranch: name,
+                createdAt: created
+            )
+        }
+
+        managedWorktrees = all
+        return all
+    }
+
     func loadMetadata(for worktreeURL: URL) -> WorktreeMetadata? {
         let metaURL = metadataURL(for: worktreeURL)
         guard let data = try? Data(contentsOf: metaURL) else { return nil }
