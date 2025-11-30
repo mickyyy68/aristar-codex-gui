@@ -20,8 +20,8 @@ struct CodexSessionView: View {
                 Button {
                     onClose()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                    Text("Close")
+                    Label("Close", systemImage: "xmark.circle.fill")
+                        .labelStyle(.titleAndIcon)
                 }
                 .buttonStyle(.brandGhost)
             }

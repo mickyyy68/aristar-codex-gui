@@ -32,6 +32,9 @@ final class AppModel: ObservableObject {
             recents = [ref]
             saveRecents()
         }
+        // Ensure favorites are not duplicated into recents on load.
+        recents.removeAll { favorites.contains($0) }
+        saveRecents()
 
         restoreBranchPanes()
     }
@@ -40,23 +43,29 @@ final class AppModel: ObservableObject {
 
     func selectProject(_ ref: ProjectRef) {
         selectedProject = ref
-        addRecent(ref)
+        if !favorites.contains(ref) {
+            addRecent(ref)
+        }
         branchesForSelected = loadBranches(for: ref)
         restoreError = nil
         hubError = nil
-        selectedBranchName = nil
+        // Restore the most recently opened branch for this project if present.
+        selectedBranchName = branchPanes.last(where: { $0.project == ref })?.branch
     }
 
     func addFavorite(_ ref: ProjectRef) {
         if !favorites.contains(ref) {
             favorites.append(ref)
+            recents.removeAll { $0 == ref }
             saveFavorites()
+            saveRecents()
         }
     }
 
     func removeFavorite(_ ref: ProjectRef) {
         favorites.removeAll { $0 == ref }
         saveFavorites()
+        addRecent(ref)
     }
 
     func addRecent(_ ref: ProjectRef) {
@@ -69,11 +78,12 @@ final class AppModel: ObservableObject {
         if let idx = branchPanes.firstIndex(where: { $0.project == project && $0.branch == branch }) {
             branchPanes.remove(at: idx)
             if selectedBranchName == branch {
-                selectedBranchName = branchPanes.first?.branch
+                selectedBranchName = branchPanes.last(where: { $0.project == project })?.branch
             }
             persistBranchPanes()
             return
         }
+
         var pane = BranchPane(project: project, branch: branch)
         pane.worktrees = loadManagedWorktrees(for: branch, project: project)
         if let first = pane.worktrees.first {
@@ -87,7 +97,7 @@ final class AppModel: ObservableObject {
     func closeBranchPane(_ pane: BranchPane) {
         branchPanes.removeAll { $0.id == pane.id }
         if selectedBranchName == pane.branch {
-            selectedBranchName = branchPanes.first?.branch
+            selectedBranchName = branchPanes.last(where: { $0.project == pane.project })?.branch
         }
         persistBranchPanes()
     }
@@ -165,6 +175,30 @@ final class AppModel: ObservableObject {
         WorkingSetStore.save(workingSet)
         if selectedWorkingSetID == worktree.id {
             selectedWorkingSetID = workingSet.first?.id
+        }
+    }
+
+    func removeProjectCompletely(_ ref: ProjectRef) {
+        favorites.removeAll { $0 == ref }
+        recents.removeAll { $0 == ref }
+        saveFavorites()
+        saveRecents()
+
+        if selectedProject == ref {
+            selectedProject = nil
+            selectedBranchName = nil
+        }
+
+        // Remove related branch panes and working set items.
+        branchPanes.removeAll { $0.project == ref }
+        workingSet.removeAll { $0.project == ref }
+        WorkingSetStore.save(workingSet)
+        persistBranchPanes()
+
+        guard let manager = manager(for: ref.url) else { return }
+        let allManaged = manager.loadAllManagedWorktrees()
+        for wt in allManaged {
+            _ = manager.deleteWorktree(wt)
         }
     }
 
@@ -335,7 +369,7 @@ final class AppModel: ObservableObject {
         }
 
         branchPanes = restored
-        selectedBranchName = branchPanes.first?.branch
+        selectedBranchName = nil
 
         if !skipped.isEmpty {
             restoreError = "Skipped \(skipped.count) branch pane(s): \(skipped.joined(separator: ", "))"

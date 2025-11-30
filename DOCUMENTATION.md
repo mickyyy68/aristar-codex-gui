@@ -62,6 +62,8 @@
 - Navigation: Cmd+1 switches to Hubs; Cmd+2 switches to Working Set.
 - Error surfacing: worktree creation errors and missing persisted worktrees surface inline; codex binary missing errors surfaced via auth status.
 - Visual language: dark “Ink” base with “Midnight” panels, “Ion” accents/CTAs, rounded pills/cards, and a custom SwiftTerm theme (Ink background, Flour text, Ion cursor, Icing selection). Shared button styles (primary/ghost/danger) and pills live in `BrandStyle.swift`; current styling uses minimal/no glow and softer borders/fills for selection states.
+- Hubs sidebar matches the Working Set “inbox” list: project rows show a status dot, project name/path, star toggle (favorites), and delete action; selected rows highlight with a leading Ion bar. Project count is shown as a pill in the header.
+- Favorites are removed from recents; removing a favorite re-adds it to recents. A “Remove project” action deletes all Aristar-managed worktrees/branches for that project and clears it from favorites/recents, branch panes, and working set.
 
 ## Known gaps / TODOs
 - ANSI/OSC passthrough is delegated to SwiftTerm.

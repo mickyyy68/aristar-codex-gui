@@ -250,8 +250,11 @@ private struct HubsPage: View {
 
 private struct ProjectHubColumn: View {
     @ObservedObject var model: AppModel
+    @State private var pendingRemoval: ProjectRef?
 
     var body: some View {
+        let totalProjects = Set((model.favorites + model.recents).map { $0.id }).count
+
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle")
@@ -259,6 +262,15 @@ private struct ProjectHubColumn: View {
                 Text("Projects")
                     .font(BrandFont.display(size: 16, weight: .semibold))
                     .foregroundStyle(BrandColor.flour)
+                Spacer()
+                if totalProjects > 0 {
+                    Text("\(totalProjects)")
+                        .font(.caption.weight(.semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .brandPill(active: true)
+                        .foregroundStyle(BrandColor.flour)
+                }
             }
 
             if !model.favorites.isEmpty {
@@ -267,20 +279,13 @@ private struct ProjectHubColumn: View {
                         .font(BrandFont.ui(size: 13, weight: .semibold))
                         .foregroundStyle(BrandColor.flour)
                     ForEach(model.favorites) { project in
-                        ProjectRow(
-                            title: project.name,
-                            subtitle: project.path,
+                        ProjectInboxRow(
+                            project: project,
                             isSelected: model.selectedProject == project,
+                            isFavorite: true,
                             onSelect: { model.selectProject(project) },
-                            accessory: {
-                                Button {
-                                    model.removeFavorite(project)
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .buttonStyle(.borderless)
-                            }
+                            onToggleFavorite: { model.removeFavorite(project) },
+                            onRemove: { pendingRemoval = project }
                         )
                     }
                 }
@@ -296,25 +301,20 @@ private struct ProjectHubColumn: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.recents) { project in
-                        ProjectRow(
-                            title: project.name,
-                            subtitle: project.path,
+                        let isFav = model.favorites.contains(project)
+                        ProjectInboxRow(
+                            project: project,
                             isSelected: model.selectedProject == project,
+                            isFavorite: isFav,
                             onSelect: { model.selectProject(project) },
-                            accessory: {
-                                Group {
-                                    if !model.favorites.contains(project) {
-                                        Button {
-                                            model.addFavorite(project)
-                                        } label: {
-                                            Image(systemName: "star")
-                                        }
-                                        .buttonStyle(.borderless)
-                                    } else {
-                                        EmptyView()
-                                    }
+                            onToggleFavorite: {
+                                if isFav {
+                                    model.removeFavorite(project)
+                                } else {
+                                    model.addFavorite(project)
                                 }
-                            }
+                            },
+                            onRemove: { pendingRemoval = project }
                         )
                     }
                 }
@@ -325,54 +325,85 @@ private struct ProjectHubColumn: View {
         .padding(12)
         .brandPanel()
         .shadow(color: .clear, radius: 0)
+        .confirmationDialog(
+            "Remove project?",
+            isPresented: Binding(
+                get: { pendingRemoval != nil },
+                set: { value in if !value { pendingRemoval = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove and delete managed worktrees", role: .destructive) {
+                if let target = pendingRemoval {
+                    model.removeProjectCompletely(target)
+                }
+                pendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingRemoval = nil
+            }
+        } message: {
+            Text("This removes the project from favorites/recents and deletes all Aristar-managed worktrees and branches for it.")
+        }
     }
 }
 
-private struct ProjectRow<Accessory: View>: View {
-    let title: String
-    let subtitle: String
+private struct ProjectInboxRow: View {
+    let project: ProjectRef
     let isSelected: Bool
+    let isFavorite: Bool
     let onSelect: () -> Void
-    let accessory: () -> Accessory
-
-    init(title: String, subtitle: String, isSelected: Bool, onSelect: @escaping () -> Void, accessory: @escaping () -> Accessory = { EmptyView() }) {
-        self.title = title
-        self.subtitle = subtitle
-        self.isSelected = isSelected
-        self.onSelect = onSelect
-        self.accessory = accessory
-    }
+    let onToggleFavorite: () -> Void
+    let onRemove: (() -> Void)?
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(isFavorite ? BrandColor.ion : BrandColor.orbit.opacity(0.6))
+                    .frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(project.name)
                         .font(BrandFont.ui(size: 13, weight: .semibold))
                         .foregroundStyle(BrandColor.flour)
                         .lineLimit(1)
-                    Text(subtitle)
+                    Text(project.path)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 Spacer()
-                accessory()
+                HStack(spacing: 6) {
+                    Button {
+                        onToggleFavorite()
+                    } label: {
+                        Image(systemName: isFavorite ? "star.fill" : "star")
+                            .foregroundStyle(isFavorite ? BrandColor.ion : Color.secondary)
+                    }
+                    .buttonStyle(.plain)
+
+                    if let onRemove {
+                        Button(role: .destructive) {
+                            onRemove()
+                        } label: {
+                            Image(systemName: "trash")
+                                .foregroundStyle(BrandColor.berry)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                    .fill(isSelected ? BrandColor.ion.opacity(0.08) : BrandColor.midnight.opacity(0.7))
+                    .fill(isSelected ? BrandColor.ion.opacity(0.2) : BrandColor.midnight.opacity(0.85))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                    .stroke(isSelected ? BrandColor.ion.opacity(0.4) : BrandColor.orbit.opacity(0.35), lineWidth: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                    .stroke(BrandColor.ion.opacity(isSelected ? 0.3 : 0), lineWidth: 0.5)
+                Rectangle()
+                    .fill(BrandColor.ion.opacity(isSelected ? 0.9 : 0))
+                    .frame(width: 3),
+                alignment: .leading
             )
         }
         .buttonStyle(.plain)
@@ -405,7 +436,8 @@ private struct BranchListPanel: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(model.branchesForSelected, id: \.self) { branch in
-                                let isActive = model.selectedBranchName == branch || model.branchPanes.contains(where: { $0.branch == branch && $0.project == model.selectedProject })
+                                let hasPane = model.branchPanes.contains { $0.project == model.selectedProject && $0.branch == branch }
+                                let isActive = model.selectedBranchName == branch || hasPane
                                 Button {
                                     if let project = model.selectedProject {
                                         model.openBranchPane(for: project, branch: branch)
@@ -415,6 +447,8 @@ private struct BranchListPanel: View {
                                         Image(systemName: "arrow.triangle.branch")
                                         Text(branch)
                                             .font(BrandFont.ui(size: 13, weight: .semibold))
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
                                     }
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 8)
@@ -422,6 +456,7 @@ private struct BranchListPanel: View {
                                 }
                                 .buttonStyle(.plain)
                                 .brandPill(active: isActive)
+                                .help(branch)
                             }
                         }
                     }
@@ -483,47 +518,47 @@ private struct BranchPaneCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(BrandColor.flour.opacity(0.8))
                     Text(pane.project.name)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
-                        Label(pane.branch, systemImage: "arrow.triangle.branch")
-                            .font(BrandFont.display(size: 15, weight: .semibold))
-                            .labelStyle(.titleAndIcon)
-                            .foregroundStyle(BrandColor.flour)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .brandPill(active: true)
-                    }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(BrandColor.flour.opacity(0.9))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                Spacer()
-                HStack(spacing: 8) {
-                    ActionPill(
-                        fill: BrandColor.midnight.opacity(0.85),
-                        stroke: BrandColor.orbit.opacity(0.5)
-                    ) {
-                        model.refreshPane(pane)
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                        Text("Refresh")
-                    }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(BrandColor.midnight.opacity(0.85))
+                )
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(BrandColor.orbit.opacity(0.35), lineWidth: 1)
+                )
 
-                    ActionPill(
-                        fill: BrandColor.ion.opacity(0.9),
-                        stroke: BrandColor.ion.opacity(0.9),
-                        foreground: BrandColor.ink
-                    ) {
-                        model.createWorktree(in: pane)
-                    } label: {
-                        Image(systemName: "plus")
-                        Text("Create")
-                    }
-                    .disabled(model.isManagedRoot(pane.project))
-                    .opacity(model.isManagedRoot(pane.project) ? 0.6 : 1)
-                    .help(model.isManagedRoot(pane.project) ? "Open the main repository to create worktrees." : "Create a managed worktree for this branch.")
-                }
+                Spacer()
+
+                Label(pane.branch, systemImage: "arrow.triangle.branch")
+                    .font(BrandFont.display(size: 15, weight: .semibold))
+                    .labelStyle(.titleAndIcon)
+                    .foregroundStyle(BrandColor.flour)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 240, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(BrandColor.midnight.opacity(0.78))
+                    )
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(BrandColor.ion.opacity(0.5), lineWidth: 1.2)
+                    )
+                    .help(pane.branch)
             }
 
             if let error = pane.error {
@@ -565,6 +600,21 @@ private struct BranchPaneCard: View {
                     }
                 }
             }
+
+            ActionPill(
+                fill: BrandColor.ion.opacity(0.9),
+                stroke: BrandColor.ion.opacity(0.9),
+                foreground: BrandColor.ink,
+                padding: EdgeInsets(top: 7, leading: 14, bottom: 7, trailing: 14)
+            ) {
+                model.createWorktree(in: pane)
+            } label: {
+                Image(systemName: "plus")
+                Text("Create Worktree")
+            }
+            .disabled(model.isManagedRoot(pane.project))
+            .opacity(model.isManagedRoot(pane.project) ? 0.6 : 1)
+            .help(model.isManagedRoot(pane.project) ? "Open the main repository to create worktrees." : "Create a managed worktree for this branch.")
         }
         .padding(14)
         .brandPanel()
@@ -819,6 +869,7 @@ private struct WorkingSetSidebarRow: View {
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.plain)
+                .help("Remove from working set")
                 .foregroundStyle(BrandColor.berry)
             }
             .padding(8)
@@ -897,14 +948,25 @@ private struct WorkingSetDetailBody: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Text(worktree.path.path)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    HStack(spacing: 6) {
+                        Text(worktree.path.path)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Button {
+                            copyPath(worktree.path.path)
+                        } label: {
+                            Label("Copy path", systemImage: "doc.on.doc")
+                                .labelStyle(.iconOnly)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Copy path")
+                    }
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 8) {
+                    Spacer()
                     if running {
                         Button(role: .destructive) {
                             model.stop(worktree: worktree, project: item.project)
@@ -912,21 +974,28 @@ private struct WorkingSetDetailBody: View {
                             Label("Stop", systemImage: "stop.fill")
                         }
                         .buttonStyle(.brandDanger)
-                    }
 
-                    Button {
-                        _ = model.launch(worktree: worktree, project: item.project)
-                    } label: {
-                        Label("Start agent", systemImage: "play.fill")
-                    }
-                    .buttonStyle(.brandPrimary)
+                        Button {
+                            _ = model.resume(worktree: worktree, project: item.project)
+                        } label: {
+                            Label("Resume", systemImage: "clock.arrow.circlepath")
+                        }
+                        .buttonStyle(.brandGhost)
+                    } else {
+                        Button {
+                            _ = model.launch(worktree: worktree, project: item.project)
+                        } label: {
+                            Label("Start agent", systemImage: "play.fill")
+                        }
+                        .buttonStyle(.brandPrimary)
 
-                    Button {
-                        _ = model.resume(worktree: worktree, project: item.project)
-                    } label: {
-                        Label("Resume", systemImage: "clock.arrow.circlepath")
+                        Button {
+                            _ = model.resume(worktree: worktree, project: item.project)
+                        } label: {
+                            Label("Resume", systemImage: "clock.arrow.circlepath")
+                        }
+                        .buttonStyle(.brandGhost)
                     }
-                    .buttonStyle(.brandGhost)
                 }
             }
 
@@ -972,12 +1041,16 @@ private struct WorktreeRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
+                Circle()
+                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
+                    .frame(width: 10, height: 10)
                 ZStack {
                     Circle()
                         .fill(BrandColor.midnight)
-                        .frame(width: 32, height: 32)
+                        .frame(width: 28, height: 28)
                     Image(systemName: "shippingbox.fill")
                         .foregroundStyle(isInWorkingSet ? BrandColor.ion : BrandColor.flour.opacity(0.85))
+                        .font(.system(size: 13, weight: .semibold))
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(worktree.displayName)
@@ -995,26 +1068,24 @@ private struct WorktreeRow: View {
                     Text("In working set")
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 3)
                         .background(
                             Capsule(style: .continuous)
-                                .fill(BrandColor.ion.opacity(0.16))
+                                .fill(BrandColor.ion.opacity(0.1))
                         )
                         .overlay(
                             Capsule(style: .continuous)
-                                .stroke(BrandColor.ion.opacity(0.85), lineWidth: 1.2)
+                                .stroke(BrandColor.ion.opacity(0.6), lineWidth: 1)
                         )
                         .foregroundStyle(BrandColor.ion)
                 }
-                Circle()
-                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.7))
-                    .frame(width: 10, height: 10)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ActionPill(
-                    fill: BrandColor.midnight.opacity(0.9),
-                    stroke: BrandColor.orbit.opacity(0.4)
+                    fill: BrandColor.midnight.opacity(0.85),
+                    stroke: BrandColor.orbit.opacity(0.35),
+                    padding: EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
                 ) {
                     copyPath(worktree.path.path)
                 } label: {
@@ -1046,6 +1117,7 @@ private struct WorktreeRow: View {
                         Image(systemName: "minus.circle")
                     }
                     .buttonStyle(.plain)
+                    .help("Remove from working set")
                     .foregroundStyle(BrandColor.citrus)
                 }
                 Button(role: .destructive) {
@@ -1058,7 +1130,14 @@ private struct WorktreeRow: View {
             }
         }
         .padding(12)
-        .brandCard()
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(BrandColor.midnight.opacity(0.75))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(BrandColor.orbit.opacity(0.25), lineWidth: 1)
+        )
         .shadow(color: .clear, radius: 0)
         .onTapGesture { onSelect() }
     }
@@ -1094,13 +1173,15 @@ private struct ActionPill<Label: View>: View {
     let fill: Color
     let stroke: Color
     var foreground: Color = BrandColor.flour
+    var padding: EdgeInsets = EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12)
     let action: () -> Void
     let label: () -> Label
 
-    init(fill: Color, stroke: Color, foreground: Color = BrandColor.flour, action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) {
+    init(fill: Color, stroke: Color, foreground: Color = BrandColor.flour, padding: EdgeInsets = EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12), action: @escaping () -> Void, @ViewBuilder label: @escaping () -> Label) {
         self.fill = fill
         self.stroke = stroke
         self.foreground = foreground
+        self.padding = padding
         self.action = action
         self.label = label
     }
@@ -1110,9 +1191,9 @@ private struct ActionPill<Label: View>: View {
             HStack(spacing: 6) {
                 label()
                     .font(BrandFont.ui(size: 13, weight: .semibold))
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(padding)
             .foregroundStyle(foreground)
             .background(
                 Capsule(style: .continuous)
