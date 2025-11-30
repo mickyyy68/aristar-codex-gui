@@ -38,6 +38,7 @@ struct WorkingSetItem: Identifiable, Codable, Equatable {
     let worktreePath: String
     let originalBranch: String
     let agentBranch: String
+    var displayName: String
 
     init(worktree: ManagedWorktree, project: ProjectRef) {
         self.id = worktree.path.path
@@ -45,10 +46,31 @@ struct WorkingSetItem: Identifiable, Codable, Equatable {
         self.worktreePath = worktree.path.path
         self.originalBranch = worktree.originalBranch
         self.agentBranch = worktree.agentBranch
+        self.displayName = worktree.displayName
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        project = try container.decode(ProjectRef.self, forKey: .project)
+        worktreePath = try container.decode(String.self, forKey: .worktreePath)
+        originalBranch = try container.decode(String.self, forKey: .originalBranch)
+        agentBranch = try container.decode(String.self, forKey: .agentBranch)
+        let slug = URL(fileURLWithPath: worktreePath).lastPathComponent
+        let rawName = try container.decodeIfPresent(String.self, forKey: .displayName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let rawName, !rawName.isEmpty {
+            displayName = rawName
+        } else {
+            displayName = slug
+        }
+    }
+
+    static func == (lhs: WorkingSetItem, rhs: WorkingSetItem) -> Bool {
+        lhs.id == rhs.id
     }
 
     var url: URL { URL(fileURLWithPath: worktreePath) }
-    var displayName: String { URL(fileURLWithPath: worktreePath).lastPathComponent }
 }
 
 enum HubTab: Int, Hashable {

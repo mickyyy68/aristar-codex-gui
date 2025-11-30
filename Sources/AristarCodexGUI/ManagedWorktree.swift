@@ -13,12 +13,20 @@ struct WorktreeMetadata: Codable {
     let originalBranch: String
     let agentBranch: String
     let createdAt: Date
+    var displayName: String?
     var previewServices: [PreviewServiceConfig]
 
-    init(originalBranch: String, agentBranch: String, createdAt: Date, previewServices: [PreviewServiceConfig] = []) {
+    init(
+        originalBranch: String,
+        agentBranch: String,
+        createdAt: Date,
+        displayName: String? = nil,
+        previewServices: [PreviewServiceConfig] = []
+    ) {
         self.originalBranch = originalBranch
         self.agentBranch = agentBranch
         self.createdAt = createdAt
+        self.displayName = displayName
         self.previewServices = previewServices
     }
 
@@ -27,6 +35,7 @@ struct WorktreeMetadata: Codable {
         originalBranch = try container.decode(String.self, forKey: .originalBranch)
         agentBranch = try container.decode(String.self, forKey: .agentBranch)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         previewServices = try container.decodeIfPresent([PreviewServiceConfig].self, forKey: .previewServices) ?? []
     }
 }
@@ -36,16 +45,29 @@ struct ManagedWorktree: Identifiable, Equatable {
     let originalBranch: String
     let agentBranch: String
     let createdAt: Date?
+    var displayName: String
     var previewServices: [PreviewServiceConfig]
 
-    init(path: URL, originalBranch: String, agentBranch: String, createdAt: Date?, previewServices: [PreviewServiceConfig] = []) {
+    init(
+        path: URL,
+        originalBranch: String,
+        agentBranch: String,
+        createdAt: Date?,
+        displayName: String,
+        previewServices: [PreviewServiceConfig] = []
+    ) {
         self.path = path
         self.originalBranch = originalBranch
         self.agentBranch = agentBranch
         self.createdAt = createdAt
+        self.displayName = displayName
         self.previewServices = previewServices
     }
 
     var id: String { path.path }
-    var displayName: String { path.lastPathComponent }
+    var slug: String { path.lastPathComponent }
+    var shortID: String {
+        let parts = agentBranch.split(separator: "-")
+        return parts.last.map(String.init) ?? agentBranch
+    }
 }

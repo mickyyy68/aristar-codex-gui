@@ -120,9 +120,21 @@ final class CodexSessionManager: ObservableObject {
             worktreePath: worktreeDir
         ) {
         case .success:
-            let metadata = WorktreeMetadata(originalBranch: branch, agentBranch: agentBranch, createdAt: Date())
+            let metadata = WorktreeMetadata(
+                originalBranch: branch,
+                agentBranch: agentBranch,
+                createdAt: Date(),
+                displayName: worktreeName
+            )
             persistMetadata(metadata, at: worktreeDir)
-            let managed = ManagedWorktree(path: worktreeDir, originalBranch: branch, agentBranch: agentBranch, createdAt: metadata.createdAt, previewServices: metadata.previewServices)
+            let managed = ManagedWorktree(
+                path: worktreeDir,
+                originalBranch: branch,
+                agentBranch: agentBranch,
+                createdAt: metadata.createdAt,
+                displayName: metadata.displayName ?? worktreeName,
+                previewServices: metadata.previewServices
+            )
             managedWorktrees.append(managed)
             return managed
         case .failure(let err):
@@ -156,6 +168,7 @@ final class CodexSessionManager: ObservableObject {
                     originalBranch: meta.originalBranch,
                     agentBranch: meta.agentBranch,
                     createdAt: meta.createdAt,
+                    displayName: meta.displayName ?? url.lastPathComponent,
                     previewServices: meta.previewServices
                 )
             }
@@ -179,6 +192,7 @@ final class CodexSessionManager: ObservableObject {
                 originalBranch: inferredBranch.isEmpty ? branch : inferredBranch,
                 agentBranch: name,
                 createdAt: created,
+                displayName: url.lastPathComponent,
                 previewServices: []
             )
         }
@@ -206,6 +220,7 @@ final class CodexSessionManager: ObservableObject {
                     originalBranch: meta.originalBranch,
                     agentBranch: meta.agentBranch,
                     createdAt: meta.createdAt,
+                    displayName: meta.displayName ?? url.lastPathComponent,
                     previewServices: meta.previewServices
                 )
             }
@@ -226,6 +241,7 @@ final class CodexSessionManager: ObservableObject {
                 originalBranch: inferredBranch.isEmpty ? "" : inferredBranch,
                 agentBranch: name,
                 createdAt: created,
+                displayName: url.lastPathComponent,
                 previewServices: []
             )
         }
@@ -244,10 +260,42 @@ final class CodexSessionManager: ObservableObject {
         var meta = loadMetadata(for: worktree.path) ?? WorktreeMetadata(
             originalBranch: worktree.originalBranch,
             agentBranch: worktree.agentBranch,
-            createdAt: worktree.createdAt ?? Date()
+            createdAt: worktree.createdAt ?? Date(),
+            displayName: worktree.displayName
         )
         meta.previewServices = services
         persistMetadata(meta, at: worktree.path)
+    }
+
+    func rename(_ worktree: ManagedWorktree, to newName: String) -> ManagedWorktree? {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            lastWorktreeError = "Name cannot be empty."
+            return nil
+        }
+        var updated = worktree
+        updated.displayName = trimmed
+
+        var meta = loadMetadata(for: worktree.path) ?? WorktreeMetadata(
+            originalBranch: worktree.originalBranch,
+            agentBranch: worktree.agentBranch,
+            createdAt: worktree.createdAt ?? Date(),
+            displayName: worktree.displayName,
+            previewServices: worktree.previewServices
+        )
+        meta.displayName = trimmed
+        persistMetadata(meta, at: worktree.path)
+
+        if let idx = managedWorktrees.firstIndex(where: { $0.id == worktree.id }) {
+            managedWorktrees[idx] = updated
+        }
+
+        if let liveSession = session(for: worktree) {
+            liveSession.title = trimmed
+        }
+
+        lastWorktreeError = nil
+        return updated
     }
 
     func startSession(for worktree: ManagedWorktree) -> CodexSession {

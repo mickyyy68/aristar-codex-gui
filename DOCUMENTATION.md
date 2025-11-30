@@ -52,7 +52,7 @@
 ## Behavioral details
 - Worktree root per project: `~/.aristar-codex-gui/worktrees/<project-name>-<hash>/…`.
 - Managed worktree/branch name: `aristar-wt-<safeBranch>-<shortid>`; created from selected base branch/start point. Deleted when the worktree is removed. Legacy `agent-*` worktrees/branches are still recognized for cleanup. Worktree deletion will retry with `git worktree remove -f` when the worktree is dirty.
-- Worktree metadata: stored outside the worktree at `~/.aristar-codex-gui/metadata/<project-key>/<worktree>.json` (base branch, agent branch, created date).
+- Worktree metadata: stored outside the worktree at `~/.aristar-codex-gui/metadata/<project-key>/<worktree>.json` (base branch, agent branch, created date, display name/alias). Display names are a UI-only alias; the worktree folder/agent branch names remain unchanged.
 - Recent projects: `ProjectListStore` keeps an ordered list of recent project paths; favorites are stored separately and pinned. Legacy `RecentProjectStore` is still present for backward compatibility but the UI now relies on the favorites/recents lists.
 - Branch panes: only app-managed worktrees are listed for a project/branch. Worktree creation is blocked if the selected project is itself a managed worktree (nested worktree guard).
 - Cleanup: deleting a worktree removes its directory (if under the managed root) and deletes the agent branch; stopping an agent no longer removes the worktree.
@@ -83,6 +83,7 @@
 - Starting Script: services persist per worktree, “Start preview” starts all enabled services, per-service start/stop works, and `.env` files are cleaned up/restored after stop.
 - Deleting a worktree stops its agent (if running), removes the worktree directory, and deletes the agent branch; missing worktree paths surface an inline warning.
 - Brand theme renders correctly (Ink/Midnight surfaces, Ion accents, custom SwiftTerm colors).
+- Worktrees can be renamed inline from branch-pane rows, the Working Set sidebar, and the Working Set detail header. Renames trim whitespace, reject empty names, and persist the alias to metadata/working-set storage without changing the folder or agent branch names.
 - `swift test` runs unit + integration coverage:
   - Preview path resolver (empty/relative/absolute root cases).
   - Worktree integration in a temp git repo (create/delete managed worktree).

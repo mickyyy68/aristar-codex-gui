@@ -43,6 +43,31 @@ final class WorktreeIntegrationTests: XCTestCase {
             }
         }
     }
+
+    func testRenameManagedWorktreePersistsDisplayName() throws {
+        let manager = CodexSessionManager(projectRoot: tempRoot, codexPath: "/usr/bin/true")
+        let branch = "main"
+
+        guard let worktree = manager.createManagedWorktree(branch: branch) else {
+            XCTFail("Failed to create worktree: \(manager.lastWorktreeError ?? "unknown")")
+            return
+        }
+        defer { _ = manager.deleteWorktree(worktree) }
+
+        let alias = "Renamed Worktree"
+        guard let renamed = manager.rename(worktree, to: alias) else {
+            XCTFail("Rename failed: \(manager.lastWorktreeError ?? "unknown error")")
+            return
+        }
+
+        XCTAssertEqual(renamed.displayName, alias)
+        XCTAssertEqual(manager.loadMetadata(for: worktree.path)?.displayName, alias)
+
+        let reloaded = manager.loadManagedWorktrees(for: branch)
+        let matched = reloaded.first { $0.id == worktree.id }
+        XCTAssertEqual(matched?.displayName, alias)
+        XCTAssertEqual(matched?.agentBranch, worktree.agentBranch)
+    }
 }
 
 private extension WorktreeIntegrationTests {

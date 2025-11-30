@@ -594,7 +594,10 @@ private struct BranchPaneCard: View {
                                 model.selectWorktree(wt, in: pane)
                                 model.removeFromWorkingSet(worktree: wt, project: pane.project)
                             },
-                            onDelete: { pendingDelete = wt }
+                            onDelete: { pendingDelete = wt },
+                            onRename: { newName in
+                                return model.rename(worktree: wt, in: pane, newName: newName)
+                        }
                         )
                         .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
@@ -823,7 +826,10 @@ private struct WorkingSetSidebar: View {
                                 isSelected: isSelected,
                                 isRunning: model.worktree(from: item).flatMap { wt in model.session(for: wt, project: item.project) } != nil,
                                 onSelect: { model.selectWorkingSet(item: item) },
-                                onRemove: { model.removeFromWorkingSet(item) }
+                                onRemove: { model.removeFromWorkingSet(item) },
+                                onRename: { newName in
+                                    return model.rename(item: item, to: newName)
+                                }
                             )
                         }
                     }
@@ -842,32 +848,83 @@ private struct WorkingSetSidebarRow: View {
     let isRunning: Bool
     let onSelect: () -> Void
     let onRemove: () -> Void
+    let onRename: (String) -> Bool
+
+    @State private var isRenaming = false
+    @State private var nameDraft: String = ""
+
+    private var isNameValid: Bool {
+        !nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
-                    .frame(width: 10, height: 10)
-                VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
+                .frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                if isRenaming {
+                    TextField("Name", text: $nameDraft, onCommit: commitRename)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(BrandColor.midnight.opacity(0.6))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(BrandColor.orbit.opacity(0.35), lineWidth: 1)
+                        )
+                        .font(BrandFont.ui(size: 13, weight: .semibold))
+                } else {
                     Text(item.displayName)
                         .font(BrandFont.ui(size: 13, weight: .semibold))
                         .foregroundStyle(BrandColor.flour)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
-                        Text(item.project.name)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(BrandColor.midnight))
-                            .foregroundStyle(BrandColor.flour.opacity(0.9))
-                        Text(item.originalBranch)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
-                Spacer()
+                HStack(spacing: 6) {
+                    Text(item.project.name)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(BrandColor.midnight))
+                        .foregroundStyle(BrandColor.flour.opacity(0.9))
+                    Text(item.originalBranch)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+            if isRenaming {
+                Button {
+                    commitRename()
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(isNameValid ? BrandColor.mint : .secondary)
+                .disabled(!isNameValid)
+
+                Button {
+                    cancelRename()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(BrandColor.berry)
+            } else {
+                Button {
+                    nameDraft = item.displayName
+                    isRenaming = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(BrandColor.flour.opacity(0.85))
+                .help("Rename worktree")
+
                 Button(role: .destructive) {
                     onRemove()
                 } label: {
@@ -877,19 +934,36 @@ private struct WorkingSetSidebarRow: View {
                 .help("Remove from working set")
                 .foregroundStyle(BrandColor.berry)
             }
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                    .fill(isSelected ? BrandColor.ion.opacity(0.2) : BrandColor.midnight.opacity(0.8))
-            )
-            .overlay(
-                Rectangle()
-                    .fill(BrandColor.ion.opacity(isSelected ? 0.85 : 0))
-                    .frame(width: 3)
-                , alignment: .leading
-            )
         }
-        .buttonStyle(.plain)
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
+                .fill(isSelected ? BrandColor.ion.opacity(0.2) : BrandColor.midnight.opacity(0.8))
+        )
+        .overlay(
+            Rectangle()
+                .fill(BrandColor.ion.opacity(isSelected ? 0.85 : 0))
+                .frame(width: 3)
+            , alignment: .leading
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isRenaming else { return }
+            onSelect()
+        }
+    }
+
+    private func commitRename() {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if onRename(trimmed) {
+            isRenaming = false
+        }
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+        nameDraft = item.displayName
     }
 }
 
@@ -944,7 +1018,7 @@ private struct WorktreeDetailTabs: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            WorktreeHeader(item: item, worktree: worktree)
+            WorktreeHeader(item: item, worktree: worktree, onRename: renameWorktree)
 
             WorktreeTabSwitcher(selectedTab: $tab)
 
@@ -969,12 +1043,31 @@ private struct WorktreeDetailTabs: View {
             guard hasLoadedPreview else { return }
             worktree = model.savePreviewConfigs(services, for: worktree, project: item.project)
         }
+        .onReceive(model.$workingSet) { _ in
+            if let refreshed = model.worktree(from: item) {
+                worktree = refreshed
+            }
+        }
     }
 
     private func reloadPreview() {
         model.previewError = nil
         previewServices = model.previewConfigs(for: worktree, project: item.project)
         hasLoadedPreview = true
+    }
+
+    private func renameWorktree(_ newName: String) -> Bool {
+        let success = model.rename(item: item, to: newName)
+        if success {
+            if let refreshed = model.worktree(from: item) {
+                worktree = refreshed
+            } else {
+                var copy = worktree
+                copy.displayName = newName
+                worktree = copy
+            }
+        }
+        return success
     }
 }
 
@@ -1023,12 +1116,66 @@ private struct WorktreeTabSwitcher: View {
 private struct WorktreeHeader: View {
     let item: WorkingSetItem
     let worktree: ManagedWorktree
+    let onRename: (String) -> Bool
+
+    @State private var isRenaming = false
+    @State private var nameDraft: String = ""
+
+    private var isNameValid: Bool {
+        !nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(worktree.displayName)
-                .font(BrandFont.display(size: 18, weight: .semibold))
-                .foregroundStyle(BrandColor.flour)
+            HStack(spacing: 8) {
+                if isRenaming {
+                    TextField("Name", text: $nameDraft, onCommit: commitRename)
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(BrandColor.midnight.opacity(0.65))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(BrandColor.orbit.opacity(0.35), lineWidth: 1)
+                        )
+                        .font(BrandFont.display(size: 18, weight: .semibold))
+
+                    Button {
+                        commitRename()
+                    } label: {
+                        Image(systemName: "checkmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(isNameValid ? BrandColor.mint : .secondary)
+                    .disabled(!isNameValid)
+
+                    Button {
+                        cancelRename()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(BrandColor.berry)
+                } else {
+                    Text(worktree.displayName)
+                        .font(BrandFont.display(size: 18, weight: .semibold))
+                        .foregroundStyle(BrandColor.flour)
+
+                    Button {
+                        nameDraft = worktree.displayName
+                        isRenaming = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(BrandColor.flour.opacity(0.85))
+                    .help("Rename worktree")
+                }
+                Spacer()
+            }
             HStack(spacing: 8) {
                 Label(item.project.name, systemImage: "folder")
                     .font(.caption)
@@ -1038,6 +1185,9 @@ private struct WorktreeHeader: View {
                     .foregroundStyle(BrandColor.flour)
                 Label(item.originalBranch, systemImage: "arrow.triangle.branch")
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+                Label(worktree.agentBranch, systemImage: "number")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: 6) {
@@ -1056,6 +1206,19 @@ private struct WorktreeHeader: View {
                 .help("Copy path")
             }
         }
+    }
+
+    private func commitRename() {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if onRename(trimmed) {
+            isRenaming = false
+        }
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+        nameDraft = worktree.displayName
     }
 }
 
@@ -1535,8 +1698,15 @@ private struct WorktreeRow: View {
     let onAddToWorkingSet: () -> Void
     let onRemoveFromWorkingSet: (() -> Void)?
     let onDelete: () -> Void
+    let onRename: (String) -> Bool
+
+    @State private var isRenaming = false
+    @State private var nameDraft: String = ""
 
     private var statusColor: Color { isRunning ? .green : .gray.opacity(0.6) }
+    private var isNameValid: Bool {
+        !nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1553,11 +1723,58 @@ private struct WorktreeRow: View {
                         .font(.system(size: 13, weight: .semibold))
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(worktree.displayName)
-                        .font(BrandFont.ui(size: 13, weight: .semibold))
-                        .foregroundStyle(BrandColor.flour)
-                        .lineLimit(1)
-                    Text(worktree.path.path)
+                    HStack(spacing: 6) {
+                        if isRenaming {
+                            TextField("Name", text: $nameDraft, onCommit: commitRename)
+                                .textFieldStyle(.plain)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .fill(BrandColor.midnight.opacity(0.6))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .stroke(BrandColor.orbit.opacity(0.35), lineWidth: 1)
+                                )
+                                .font(BrandFont.ui(size: 13, weight: .semibold))
+                            HStack(spacing: 6) {
+                                Button {
+                                    commitRename()
+                                } label: {
+                                    Image(systemName: "checkmark.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(isNameValid ? BrandColor.mint : .secondary)
+                                .disabled(!isNameValid)
+                                .help("Save name")
+
+                                Button {
+                                    cancelRename()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(BrandColor.berry)
+                                .help("Cancel rename")
+                            }
+                        } else {
+                            Text(worktree.displayName)
+                                .font(BrandFont.ui(size: 13, weight: .semibold))
+                                .foregroundStyle(BrandColor.flour)
+                                .lineLimit(1)
+                            Button {
+                                nameDraft = worktree.displayName
+                                isRenaming = true
+                            } label: {
+                                Image(systemName: "pencil")
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(BrandColor.flour.opacity(0.8))
+                            .help("Rename worktree")
+                        }
+                    }
+                    Label("ID \(worktree.shortID)", systemImage: "number")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1611,14 +1828,17 @@ private struct WorktreeRow: View {
                 }
 
                 if isInWorkingSet {
-                    Button(role: .destructive) {
+                    ActionPill(
+                        fill: .clear,
+                        stroke: BrandColor.citrus,
+                        foreground: BrandColor.citrus,
+                        padding: EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12)
+                    ) {
                         (onRemoveFromWorkingSet ?? onDelete)()
                     } label: {
-                        Image(systemName: "minus.circle")
+                        Label("Remove", systemImage: "minus.circle")
                     }
-                    .buttonStyle(.plain)
                     .help("Remove from working set")
-                    .foregroundStyle(BrandColor.citrus)
                 }
                 Button(role: .destructive) {
                     onDelete()
@@ -1640,6 +1860,19 @@ private struct WorktreeRow: View {
         )
         .shadow(color: .clear, radius: 0)
         .onTapGesture { onSelect() }
+    }
+
+    private func commitRename() {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if onRename(trimmed) {
+            isRenaming = false
+        }
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+        nameDraft = worktree.displayName
     }
 }
 

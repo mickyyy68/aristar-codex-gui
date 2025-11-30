@@ -149,6 +149,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    @discardableResult
+    func rename(worktree: ManagedWorktree, in pane: BranchPane, newName: String) -> Bool {
+        guard let manager = manager(for: pane.project.url) else { return false }
+        guard let updated = manager.rename(worktree, to: newName) else {
+            hubError = manager.lastWorktreeError
+            return false
+        }
+        hubError = nil
+        refreshWorktree(updated, for: pane.project)
+        updateWorkingSetName(for: updated.id, to: updated.displayName)
+        persistBranchPanes()
+        WorkingSetStore.save(workingSet)
+        return true
+    }
+
     // MARK: - Working set
 
     func addToWorkingSet(worktree: ManagedWorktree, project: ProjectRef) {
@@ -178,6 +193,22 @@ final class AppModel: ObservableObject {
         if selectedWorkingSetID == worktree.id {
             selectedWorkingSetID = workingSet.first?.id
         }
+    }
+
+    @discardableResult
+    func rename(item: WorkingSetItem, to newName: String) -> Bool {
+        guard let manager = manager(for: item.project.url),
+              let worktree = worktree(from: item),
+              let updated = manager.rename(worktree, to: newName) else {
+            hubError = manager(for: item.project.url)?.lastWorktreeError
+            return false
+        }
+        hubError = nil
+        refreshWorktree(updated, for: item.project)
+        updateWorkingSetName(for: updated.id, to: updated.displayName)
+        WorkingSetStore.save(workingSet)
+        persistBranchPanes()
+        return true
     }
 
     func removeProjectCompletely(_ ref: ProjectRef) {
@@ -426,6 +457,7 @@ final class AppModel: ObservableObject {
                 originalBranch: meta.originalBranch,
                 agentBranch: meta.agentBranch,
                 createdAt: meta.createdAt,
+                displayName: meta.displayName ?? item.displayName,
                 previewServices: meta.previewServices
             )
         }
@@ -434,6 +466,7 @@ final class AppModel: ObservableObject {
             originalBranch: item.originalBranch,
             agentBranch: item.agentBranch,
             createdAt: nil,
+            displayName: item.displayName,
             previewServices: []
         )
     }
@@ -489,6 +522,16 @@ final class AppModel: ObservableObject {
 
     private func saveFavorites() {
         ProjectListStore.saveFavorites(favorites)
+    }
+
+    private func updateWorkingSetName(for worktreeID: String, to newName: String) {
+        workingSet = workingSet.map { item in
+            var copy = item
+            if copy.id == worktreeID {
+                copy.displayName = newName
+            }
+            return copy
+        }
     }
 
     private func refreshWorktree(_ updated: ManagedWorktree, for project: ProjectRef) {

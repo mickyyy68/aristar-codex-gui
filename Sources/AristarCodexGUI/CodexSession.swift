@@ -4,7 +4,7 @@ import Darwin
 
 final class CodexSession: ObservableObject, Identifiable {
     let id = UUID()
-    let title: String
+    @Published var title: String
     let codexPath: String
     let workingDirectory: URL
     let originalBranch: String?
