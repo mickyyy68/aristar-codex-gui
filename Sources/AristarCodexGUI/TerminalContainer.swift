@@ -11,11 +11,11 @@ struct TerminalContainer: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> TerminalView {
-        // Cached view path: reattach without replaying history.
+        // Cached view path: reattach and replay history so content is visible when switching tabs.
         if let cached = Self.viewCache[session.id] {
             cached.terminalDelegate = context.coordinator
             applyTheme(to: cached)
-            bindSessionOutput(to: cached, coordinator: context.coordinator, replayExisting: false)
+            bindSessionOutput(to: cached, coordinator: context.coordinator, replayExisting: true)
             return cached
         }
 
@@ -60,6 +60,8 @@ struct TerminalContainer: NSViewRepresentable {
         coordinator.installFrameObserver(on: terminal)
         DispatchQueue.main.async { [weak coordinator] in
             coordinator?.handleSize(from: terminal, shouldReplay: replayExisting)
+            // Auto-focus terminal so user can type immediately
+            terminal.window?.makeFirstResponder(terminal)
         }
     }
 
@@ -120,13 +122,20 @@ struct TerminalContainer: NSViewRepresentable {
             print("DEBUG: View reported \(cols)x\(rows). Resizing PTY to SAFE size: \(cols)x\(safeRows)")
 
             DispatchQueue.main.async { [weak self] in
-                guard let self = self, let session = self.session else { return }
+                guard let self = self, let session = self.session, let terminal = self.terminal else { return }
 
                 if self.hasStartedSession {
                     session.attachOutput { [weak self] data in
                         self?.feedTerminal(data)
                     }
                     session.updateWindowSize(cols: cols, rows: safeRows)
+                    
+                    // Replay output when switching tabs to restore terminal content
+                    if shouldReplay, !session.output.isEmpty {
+                        // Clear terminal and replay from buffer
+                        terminal.getTerminal().resetToInitialState()
+                        self.feedTerminal(session.output)
+                    }
                     return
                 }
 
