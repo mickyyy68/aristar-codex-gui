@@ -20,12 +20,6 @@ struct TerminalPanel: View {
                     TerminalMetadataBar(
                         worktree: worktree,
                         isRunning: model.isSessionRunning(for: worktree),
-                        onStop: {
-                            model.stopAgent(for: worktree)
-                        },
-                        onResume: {
-                            model.resumeAgent(for: worktree)
-                        },
                         onCopyPath: {
                             copyPath(worktree.path.path)
                         }
@@ -144,10 +138,6 @@ private struct TerminalTab: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(isRunning ? BrandColor.mint : BrandColor.orbit.opacity(0.6))
-                    .frame(width: 8, height: 8)
-                
                 Text(worktree.displayName)
                     .font(BrandFont.ui(size: 12, weight: .semibold))
                     .foregroundStyle(isActive ? BrandColor.flour : BrandColor.flour.opacity(0.7))
@@ -184,8 +174,6 @@ private struct TerminalTab: View {
 private struct TerminalMetadataBar: View {
     let worktree: ManagedWorktree
     let isRunning: Bool
-    let onStop: () -> Void
-    let onResume: () -> Void
     let onCopyPath: () -> Void
     
     var body: some View {
@@ -212,37 +200,12 @@ private struct TerminalMetadataBar: View {
             
             Spacer()
             
-            // Actions
-            HStack(spacing: 8) {
-                if isRunning {
-                    Button(action: onStop) {
-                        Label("Stop", systemImage: "stop.fill")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandDanger)
-                    
-                    Button(action: onResume) {
-                        Label("Resume", systemImage: "clock.arrow.circlepath")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandGhost)
-                } else {
-                    Button {
-                        // Start will be handled by parent
-                    } label: {
-                        Label("Start", systemImage: "play.fill")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandPrimary)
-                }
-                
-                Button(action: onCopyPath) {
-                    Image(systemName: "doc.on.doc")
-                        .font(.caption)
-                }
-                .buttonStyle(.brandGhost)
-                .help("Copy path")
+            // Copy path button with label
+            Button(action: onCopyPath) {
+                Label("Copy Path", systemImage: "doc.on.doc")
+                    .font(.caption.weight(.semibold))
             }
+            .buttonStyle(.brandGhost)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

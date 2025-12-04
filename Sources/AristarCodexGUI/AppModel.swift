@@ -293,6 +293,9 @@ final class AppModel: ObservableObject {
         
         let session = manager.resumeSession(for: worktree)
         log("[resume] Resumed session id=\(session.id) worktree=\(worktree.displayName)")
+        
+        // Auto-open terminal
+        openTerminal(for: worktree)
     }
     
     func isSessionRunning(for worktree: ManagedWorktree) -> Bool {

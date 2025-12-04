@@ -62,6 +62,9 @@ struct WorktreeListPanel: View {
                                 onStart: {
                                     model.startAgent(for: worktree)
                                 },
+                                onResume: {
+                                    model.resumeAgent(for: worktree)
+                                },
                                 onStop: {
                                     model.stopAgent(for: worktree)
                                 },
@@ -128,6 +131,7 @@ struct WorktreeListRow: View {
     let isTerminalOpen: Bool
     let hasPreviewRunning: Bool
     let onStart: () -> Void
+    let onResume: () -> Void
     let onStop: () -> Void
     let onOpenTerminal: () -> Void
     let onOpenServices: () -> Void
@@ -274,12 +278,33 @@ struct WorktreeListRow: View {
                     .buttonStyle(.brandGhost)
                     .help("Open terminal")
                 } else {
-                    Button(action: onStart) {
-                        Label("Start", systemImage: "play.fill")
-                            .labelStyle(.iconOnly)
+                    // Start/Resume menu
+                    Menu {
+                        Button {
+                            onStart()
+                        } label: {
+                            Label("Start New", systemImage: "play.fill")
+                        }
+                        
+                        Button {
+                            onResume()
+                        } label: {
+                            Label("Resume Previous", systemImage: "clock.arrow.circlepath")
+                        }
+                    } label: {
+                        Image(systemName: "play.fill")
                     }
-                    .buttonStyle(.brandPrimary)
-                    .help("Start agent")
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                            .fill(BrandColor.ion)
+                    )
+                    .foregroundStyle(BrandColor.ink)
+                    .help("Start or resume agent")
                 }
                 
                 // Services button

@@ -309,7 +309,7 @@ private struct CodexStatusBadge: View {
     var body: some View {
         switch status {
         case .loggedIn:
-            Label("Connected", systemImage: "checkmark.circle.fill")
+            Label("Codex Connected", systemImage: "checkmark.circle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(BrandColor.mint)
                 .padding(.horizontal, 10)
