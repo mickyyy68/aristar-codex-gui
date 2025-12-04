@@ -33,6 +33,7 @@ struct TerminalPanel: View {
                         CodexSessionView(session: session) {
                             model.stopAgent(for: worktree)
                         }
+                        .id(session.id)
                     } else {
                         // No session running
                         VStack(spacing: 16) {
