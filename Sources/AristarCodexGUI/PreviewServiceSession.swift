@@ -24,6 +24,10 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
     private var envFileURL: URL?
     private var envBackupURL: URL?
     private var createdEnvFile = false
+    private var startTime: Date?
+    
+    /// Minimum time the session should stay visible so users can see errors
+    private static let minimumUptime: TimeInterval = 5.0
 
     init(serviceID: UUID, name: String, command: String, workingDirectory: URL, envText: String?) {
         self.serviceID = serviceID
@@ -38,13 +42,16 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
     }
 
     func start(initialCols: Int, initialRows: Int) {
+        print("[PreviewSession] start() called name=\(name) cols=\(initialCols) rows=\(initialRows)")
         guard !hasStarted else {
+            print("[PreviewSession] already started, just updating window size")
             updateWindowSize(cols: initialCols, rows: initialRows)
             return
         }
         hasStarted = true
 
         guard let (master, slave) = Self.openPty(cols: initialCols, rows: initialRows) else {
+            print("[PreviewSession] ERROR: failed to allocate PTY")
             Task { @MainActor in
                 if let data = "\n[Failed to allocate preview terminal]\n".data(using: .utf8) {
                     self.output.append(data)
@@ -52,6 +59,7 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
             }
             return
         }
+        print("[PreviewSession] PTY allocated successfully")
 
         prepareEnvFile()
 
@@ -61,6 +69,8 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
 
         let escapedRoot = Self.shellEscape(workingDirectory.path)
         let startCommand = "cd \(escapedRoot) && \(command)"
+        print("[PreviewSession] command: \(startCommand)")
+        print("[PreviewSession] workingDirectory: \(workingDirectory.path)")
         proc.arguments = ["-l", "-c", startCommand]
         proc.standardInput = slave
         proc.standardOutput = slave
@@ -83,11 +93,29 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
             }
         }
 
-        proc.terminationHandler = { [weak self] _ in
+        proc.terminationHandler = { [weak self] proc in
+            print("[PreviewSession] process terminated status=\(proc.terminationStatus)")
             Task { @MainActor in
-                self?.isRunning = false
-                self?.cleanupEnvFile()
-                self?.onExit?()
+                guard let self else { return }
+                self.isRunning = false
+                self.cleanupEnvFile()
+                
+                // Ensure minimum uptime so user can see error output
+                let elapsed = self.startTime.map { Date().timeIntervalSince($0) } ?? 0
+                let remaining = max(0, Self.minimumUptime - elapsed)
+                
+                if remaining > 0 {
+                    // Append exit message so user knows what happened
+                    let exitMsg = "\n\n[Process exited with status \(proc.terminationStatus). Closing in \(Int(remaining))s...]\n"
+                    if let data = exitMsg.data(using: .utf8) {
+                        self.output.append(data)
+                        self.outputHandler?(data)
+                    }
+                    
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
+                
+                self.onExit?()
             }
         }
 
@@ -96,8 +124,11 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
             process = proc
             ptyMaster = master
             ptySlave = slave
+            startTime = Date()
+            print("[PreviewSession] process started pid=\(proc.processIdentifier)")
             Task { @MainActor in self.isRunning = true }
         } catch {
+            print("[PreviewSession] ERROR: failed to run process: \(error)")
             Task { @MainActor in
                 let errorMsg = "\n[Failed to start \(self.name): \(error.localizedDescription)]\n"
                 if let data = errorMsg.data(using: .utf8) {

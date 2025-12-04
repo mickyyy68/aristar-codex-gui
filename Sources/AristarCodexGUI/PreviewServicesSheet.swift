@@ -144,25 +144,29 @@ struct PreviewServicesSheet: View {
                     // Right: Terminal output
                     VStack(spacing: 0) {
                         if let serviceID = selectedServiceID,
-                           let session = model.previewSessions[worktree.id]?[serviceID],
-                           session.isRunning {
-                            // Show terminal for selected running service
+                           let session = model.previewSessions[worktree.id]?[serviceID] {
+                            // Show terminal for selected service (session exists)
                             VStack(spacing: 0) {
                                 HStack {
                                     Circle()
-                                        .fill(BrandColor.mint)
+                                        .fill(session.isRunning ? BrandColor.mint : BrandColor.citrus)
                                         .frame(width: 8, height: 8)
                                     Text(session.name)
                                         .font(BrandFont.ui(size: 13, weight: .semibold))
                                         .foregroundStyle(BrandColor.flour)
+                                    Text(session.isRunning ? "Running" : "Starting...")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                     Spacer()
-                                    Button {
-                                        model.stopPreviewService(serviceID, worktree: worktree)
-                                    } label: {
-                                        Label("Stop", systemImage: "stop.fill")
-                                            .font(.caption.weight(.semibold))
+                                    if session.isRunning {
+                                        Button {
+                                            model.stopPreviewService(serviceID, worktree: worktree)
+                                        } label: {
+                                            Label("Stop", systemImage: "stop.fill")
+                                                .font(.caption.weight(.semibold))
+                                        }
+                                        .buttonStyle(.brandDanger)
                                     }
-                                    .buttonStyle(.brandDanger)
                                 }
                                 .padding(10)
                                 .background(BrandColor.midnight)
@@ -174,7 +178,7 @@ struct PreviewServicesSheet: View {
                             }
                         } else if let serviceID = selectedServiceID,
                                   let service = services.first(where: { $0.id == serviceID }) {
-                            // Service selected but not running
+                            // Service selected but no session created yet
                             VStack(spacing: 16) {
                                 Spacer()
                                 Image(systemName: "terminal")

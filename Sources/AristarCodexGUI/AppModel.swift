@@ -316,25 +316,31 @@ final class AppModel: ObservableObject {
     }
     
     func startPreviewService(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> PreviewServiceSession? {
+        log("[preview] startPreviewService called for service=\(service.name) worktree=\(worktree.displayName)")
         previewError = nil
         let trimmed = service.command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             previewError = "Command is required for \(service.name.isEmpty ? "a service" : service.name)."
+            log("[preview] ERROR: empty command")
             return nil
         }
         
         let root = resolvedRootPath(service, worktree: worktree)
+        log("[preview] resolved root path: \(root)")
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else {
             previewError = "Root path for \(service.name.isEmpty ? "service" : service.name) is not a folder."
+            log("[preview] ERROR: root path does not exist or is not a folder")
             return nil
         }
         
         if let existing = previewSessions[worktree.id]?[service.id], existing.isRunning {
+            log("[preview] returning existing running session id=\(existing.id)")
             observePreviewSession(existing)
             return existing
         }
         
+        log("[preview] creating new session command=\(trimmed)")
         let session = PreviewServiceSession(
             serviceID: service.id,
             name: service.name.isEmpty ? "Service" : service.name,
@@ -344,11 +350,14 @@ final class AppModel: ObservableObject {
         )
         session.onExit = { [weak self] in
             Task { @MainActor in
+                self?.log("[preview] session exited serviceID=\(service.id)")
                 self?.removePreviewSession(worktreeID: worktree.id, serviceID: service.id)
             }
         }
         observePreviewSession(session)
         previewSessions[worktree.id, default: [:]][service.id] = session
+        log("[preview] session created and stored id=\(session.id) isRunning=\(session.isRunning)")
+        log("[preview] previewSessions count for worktree: \(previewSessions[worktree.id]?.count ?? 0)")
         return session
     }
     

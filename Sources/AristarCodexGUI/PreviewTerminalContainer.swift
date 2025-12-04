@@ -100,11 +100,20 @@ struct PreviewTerminalContainer: NSViewRepresentable {
         }
 
         private func handleSize(cols: Int, rows: Int, shouldReplay: Bool) {
-            guard cols > 10, rows > 2 else { return }
+            print("[PreviewTerminal] handleSize cols=\(cols) rows=\(rows) shouldReplay=\(shouldReplay)")
+            guard cols > 10, rows > 2 else {
+                print("[PreviewTerminal] size too small, skipping")
+                return
+            }
             let safeRows = max(1, rows - 1)
 
             DispatchQueue.main.async { [weak self] in
-                guard let self = self, let session = self.session else { return }
+                guard let self = self, let session = self.session else {
+                    print("[PreviewTerminal] no self or session in async block")
+                    return
+                }
+
+                print("[PreviewTerminal] hasStartedSession=\(self.hasStartedSession) session.isRunning=\(session.isRunning)")
 
                 if self.hasStartedSession {
                     session.attachOutput { [weak self] data in
@@ -118,12 +127,14 @@ struct PreviewTerminalContainer: NSViewRepresentable {
                 }
 
                 self.hasStartedSession = true
+                print("[PreviewTerminal] starting session with cols=\(cols) rows=\(safeRows)")
 
                 session.attachOutput { [weak self] data in
                     self?.feedTerminal(data)
                 }
 
                 session.start(initialCols: cols, initialRows: safeRows)
+                print("[PreviewTerminal] session.start() called, isRunning=\(session.isRunning)")
 
                 if shouldReplay, !session.output.isEmpty {
                     self.feedTerminal(session.output)
