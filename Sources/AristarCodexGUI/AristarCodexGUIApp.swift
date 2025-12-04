@@ -4,6 +4,7 @@ import AppKit
 @main
 struct AristarCodexGUIApp: App {
     @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     init() {
         // Make sure the app shows up with a Dock icon and can present windows when launched from CLI.
@@ -18,6 +19,10 @@ struct AristarCodexGUIApp: App {
                 .task {
                     // Bring the app to the foreground when launched from Terminal.
                     NSApp.activate(ignoringOtherApps: true)
+                }
+                .onAppear {
+                    // Share model reference with AppDelegate for cleanup
+                    appDelegate.model = model
                 }
         }
         .commands {
@@ -93,5 +98,16 @@ struct AristarCodexGUIApp: App {
               let currentIndex = model.openTerminalTabs.firstIndex(of: active),
               currentIndex < model.openTerminalTabs.count - 1 else { return }
         model.activeTerminalID = model.openTerminalTabs[currentIndex + 1]
+    }
+}
+
+/// App delegate to handle app lifecycle events
+class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var model: AppModel?
+    
+    func applicationWillTerminate(_ notification: Notification) {
+        print("[AppDelegate] Application terminating, stopping all sessions...")
+        model?.stopAllSessions()
+        print("[AppDelegate] Cleanup complete.")
     }
 }

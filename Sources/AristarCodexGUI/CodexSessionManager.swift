@@ -340,6 +340,15 @@ final class CodexSessionManager: ObservableObject {
         guard let existing = session(for: worktree) else { return }
         closeSession(existing, removeWorktree: false)
     }
+    
+    /// Stop all running sessions without removing worktrees (used on app termination)
+    func stopAllSessions() {
+        for session in sessions {
+            session.stop()
+        }
+        sessions.removeAll()
+        selectedSessionID = nil
+    }
 
     func session(for worktree: ManagedWorktree) -> CodexSession? {
         sessions.first { $0.workingDirectory == worktree.path }

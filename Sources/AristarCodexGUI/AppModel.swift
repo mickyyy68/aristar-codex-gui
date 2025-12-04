@@ -152,6 +152,27 @@ final class AppModel: ObservableObject {
         }
     }
     
+    /// Stop all running agent sessions and preview services (called on app termination)
+    func stopAllSessions() {
+        log("[cleanup] Stopping all sessions...")
+        
+        // Stop all Codex agent sessions across all managers
+        for (_, manager) in managers {
+            manager.stopAllSessions()
+        }
+        
+        // Stop all preview service sessions
+        for (_, sessions) in previewSessions {
+            for (_, session) in sessions {
+                log("[cleanup] Stopping preview session: \(session.name)")
+                session.stop()
+            }
+        }
+        previewSessions.removeAll()
+        
+        log("[cleanup] All sessions stopped.")
+    }
+    
     // MARK: - Worktree Management
     
     func createWorktree(fromBranch branch: String) {
