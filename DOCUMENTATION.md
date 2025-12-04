@@ -54,7 +54,8 @@ The app uses a **focused single-project layout** with a split view design:
 7) **Agent start/stop**: Click "Start" on an idle worktree to launch an agent; its terminal opens in the right panel. Click "Stop" to terminate.
 8) **Terminal tabs**: Running agents appear as tabs in the terminal panel. Click a tab to switch; click × to close (agent keeps running). Click ⛶ for fullscreen terminal.
 9) **Deletion**: Deleting a worktree stops its agent (if running), removes the worktree folder, and deletes the agent branch.
-10) **Preview services**: Per-worktree services (name, root dir, command, optional env text) are stored in metadata. Each service runs in its own SwiftTerm terminal.
+10) **Preview services**: Per-worktree services (name, root dir, command, optional env text) are stored in metadata. Each service runs in its own SwiftTerm terminal within the services sheet. Services have a 5-second minimum uptime so users can see error output before the session closes.
+11) **App termination**: All running agents and preview services are cleanly stopped when the app quits.
 
 ## Source map
 - `Package.swift` – SwiftPM config; pulls SwiftTerm.
@@ -63,11 +64,11 @@ The app uses a **focused single-project layout** with a split view design:
 - `GitService.swift` – git helpers (detect repo, list branches, add/remove worktrees, delete branch).
 - `CodexSession.swift` – per-agent process + PTY plumbing; tracks original/agent branch.
 - `CodexSessionManager.swift` – orchestrates sessions, worktree roots, cleanup, selected session, managed worktrees.
-- `AppModel.swift` – top-level state (current project, open terminals, favorites/recents, auth).
-- `ContentView.swift` – main layout orchestration (welcome view vs split view).
+- `AppModel.swift` – top-level state (current project, open terminals, favorites/recents, auth, preview sessions).
+- `ContentView.swift` – main layout orchestration (welcome view vs resizable split view).
 - `ProjectHeader.swift` – project name/path display with switcher dropdown.
 - `ProjectSwitcher.swift` – dropdown menu for switching between projects.
-- `WorktreeListPanel.swift` – left panel showing all worktrees for current project.
+- `WorktreeListPanel.swift` – left panel showing all worktrees for current project; icon-only action buttons with tooltips.
 - `WorktreeRow.swift` – individual worktree row with status, branch, actions.
 - `TerminalPanel.swift` – right panel with tabbed terminals for running agents.
 - `WelcomeView.swift` – empty state when no project is open.
@@ -93,6 +94,8 @@ The app uses a **focused single-project layout** with a split view design:
 - Terminal: SwiftTerm connected to PTY master; TERM set to `xterm-256color`; raw escape sequences are passed through to SwiftTerm; session start is deferred until the view has a real size so the PTY is created with the correct cols/rows (also exported via `COLUMNS`/`LINES`), and subsequent resizes update the PTY size with SIGWINCH; a 1-row safety margin is applied (report rows-1 to the PTY) to avoid bottom-edge clipping; sessions launch a login `zsh` that runs the Codex command then execs into an interactive shell.
 - Error surfacing: worktree creation errors and missing projects surface inline; codex binary missing errors surfaced via auth status.
 - Visual language: dark "Ink" base with "Midnight" panels, "Ion" accents/CTAs, rounded pills/cards, and a custom SwiftTerm theme (Ink background, Flour text, Ion cursor, Icing selection). Shared button styles (primary/ghost/danger) and pills live in `BrandStyle.swift`.
+- Preview services: terminal auto-shows when starting a service; 5-second minimum uptime ensures error messages are visible before session closes; split view in services sheet shows service list on left and terminal output on right.
+- Action buttons in worktree rows are icon-only with tooltips to prevent text wrapping in narrow sidebars.
 
 ## Navigation & keyboard shortcuts
 | Shortcut | Action |
@@ -125,7 +128,8 @@ The app uses a **focused single-project layout** with a split view design:
 - Brand theme renders correctly (Ink/Midnight surfaces, Ion accents, custom SwiftTerm colors).
 - Worktrees can be renamed inline. Renames trim whitespace, reject empty names, and persist the alias to metadata without changing the folder or agent branch names.
 - Resizable split view divider can be dragged to resize panels; width persists across sessions.
-- Preview services can be configured and run per-worktree via the Services button.
+- Preview services can be configured and run per-worktree via the Services button; terminal output shows in real-time.
+- App termination cleanly stops all running agents and preview services.
 - `swift test` runs unit + integration coverage.
 
 ## Safe changes & guidelines

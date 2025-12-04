@@ -257,49 +257,43 @@ struct WorktreeListRow: View {
                 }
             }
             
-            // Action buttons
+            // Action buttons - icon-only with tooltips for compact layout
             HStack(spacing: 8) {
                 if isRunning {
-                    Button {
-                        onStop()
-                    } label: {
+                    Button(action: onStop) {
                         Label("Stop", systemImage: "stop.fill")
-                            .font(.caption.weight(.semibold))
+                            .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.brandDanger)
+                    .help("Stop agent")
                     
-                    Button {
-                        onOpenTerminal()
-                    } label: {
+                    Button(action: onOpenTerminal) {
                         Label("Terminal", systemImage: "terminal")
-                            .font(.caption.weight(.semibold))
+                            .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.brandGhost)
+                    .help("Open terminal")
                 } else {
-                    Button {
-                        onStart()
-                    } label: {
+                    Button(action: onStart) {
                         Label("Start", systemImage: "play.fill")
-                            .font(.caption.weight(.semibold))
+                            .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.brandPrimary)
+                    .help("Start agent")
                 }
                 
                 // Services button
-                Button {
-                    onOpenServices()
-                } label: {
+                Button(action: onOpenServices) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.stack.3d.up")
                         if serviceCount > 0 {
                             Text("\(serviceCount)")
-                        } else {
-                            Text("Services")
+                                .font(.caption2.weight(.bold))
                         }
                     }
-                    .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.brandGhost)
+                .help("Preview services")
                 
                 Spacer()
                 
