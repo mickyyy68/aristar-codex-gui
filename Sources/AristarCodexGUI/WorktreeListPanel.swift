@@ -4,6 +4,7 @@ import SwiftUI
 struct WorktreeListPanel: View {
     @ObservedObject var model: AppModel
     @State private var pendingDelete: ManagedWorktree?
+    @State private var showServicesFor: ManagedWorktree?
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,9 +54,11 @@ struct WorktreeListPanel: View {
                     LazyVStack(spacing: 8) {
                         ForEach(model.worktreesForCurrentProject) { worktree in
                             WorktreeListRow(
+                                model: model,
                                 worktree: worktree,
                                 isRunning: model.isSessionRunning(for: worktree),
                                 isTerminalOpen: model.openTerminalTabs.contains(worktree.id),
+                                hasPreviewRunning: model.isPreviewRunning(for: worktree),
                                 onStart: {
                                     model.startAgent(for: worktree)
                                 },
@@ -64,6 +67,9 @@ struct WorktreeListPanel: View {
                                 },
                                 onOpenTerminal: {
                                     model.openTerminal(for: worktree)
+                                },
+                                onOpenServices: {
+                                    showServicesFor = worktree
                                 },
                                 onDelete: {
                                     pendingDelete = worktree
@@ -101,17 +107,30 @@ struct WorktreeListPanel: View {
                 Text("This will remove \(worktree.displayName) and its agent branch.")
             }
         }
+        .sheet(item: $showServicesFor) { worktree in
+            PreviewServicesSheet(
+                model: model,
+                worktree: worktree,
+                isPresented: Binding(
+                    get: { showServicesFor != nil },
+                    set: { if !$0 { showServicesFor = nil } }
+                )
+            )
+        }
     }
 }
 
 /// Individual worktree row in the list
 struct WorktreeListRow: View {
+    @ObservedObject var model: AppModel
     let worktree: ManagedWorktree
     let isRunning: Bool
     let isTerminalOpen: Bool
+    let hasPreviewRunning: Bool
     let onStart: () -> Void
     let onStop: () -> Void
     let onOpenTerminal: () -> Void
+    let onOpenServices: () -> Void
     let onDelete: () -> Void
     let onRename: (String) -> Bool
     
@@ -121,6 +140,11 @@ struct WorktreeListRow: View {
     
     private var isNameValid: Bool {
         !nameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private var serviceCount: Int {
+        guard let project = model.currentProject else { return 0 }
+        return model.previewConfigs(for: worktree, project: project).count
     }
     
     var body: some View {
@@ -200,16 +224,36 @@ struct WorktreeListRow: View {
                 
                 Spacer()
                 
-                // Terminal indicator
-                if isTerminalOpen {
-                    Image(systemName: "terminal")
-                        .font(.caption)
-                        .foregroundStyle(BrandColor.ion)
+                // Status badges
+                HStack(spacing: 6) {
+                    // Preview running indicator
+                    if hasPreviewRunning {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(BrandColor.citrus)
+                                .frame(width: 6, height: 6)
+                            Text("Preview")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .foregroundStyle(BrandColor.citrus)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 3)
                         .background(
-                            Capsule().fill(BrandColor.ion.opacity(0.15))
+                            Capsule().fill(BrandColor.citrus.opacity(0.15))
                         )
+                    }
+                    
+                    // Terminal indicator
+                    if isTerminalOpen {
+                        Image(systemName: "terminal")
+                            .font(.caption)
+                            .foregroundStyle(BrandColor.ion)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(
+                                Capsule().fill(BrandColor.ion.opacity(0.15))
+                            )
+                    }
                 }
             }
             
@@ -241,6 +285,22 @@ struct WorktreeListRow: View {
                     .buttonStyle(.brandPrimary)
                 }
                 
+                // Services button
+                Button {
+                    onOpenServices()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.stack.3d.up")
+                        if serviceCount > 0 {
+                            Text("\(serviceCount)")
+                        } else {
+                            Text("Services")
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.brandGhost)
+                
                 Spacer()
                 
                 if isHovering && !isRunning {
@@ -262,7 +322,7 @@ struct WorktreeListRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                .stroke(isTerminalOpen ? BrandColor.ion.opacity(0.4) : BrandColor.orbit.opacity(0.2), lineWidth: 1)
+                .stroke(isTerminalOpen ? BrandColor.ion.opacity(0.4) : (hasPreviewRunning ? BrandColor.citrus.opacity(0.4) : BrandColor.orbit.opacity(0.2)), lineWidth: 1)
         )
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.1)) {
