@@ -21,17 +21,77 @@ struct AristarCodexGUIApp: App {
                 }
         }
         .commands {
-            CommandMenu("Navigation") {
-                Button("Hubs") {
-                    model.selectedTab = .hubs
+            CommandMenu("Project") {
+                Button("Open Project…") {
+                    openFolderPicker()
                 }
-                .keyboardShortcut("1", modifiers: [.command])
-
-                Button("Working Set") {
-                    model.selectedTab = .workingSet
+                .keyboardShortcut("o", modifiers: [.command])
+                
+                Divider()
+                
+                Button("New Worktree") {
+                    // This will be handled by the UI since we need branch selection
                 }
-                .keyboardShortcut("2", modifiers: [.command])
+                .keyboardShortcut("n", modifiers: [.command])
+                .disabled(model.currentProject == nil)
+            }
+            
+            CommandMenu("Terminal") {
+                Button("Close Terminal") {
+                    if let active = model.activeTerminalID {
+                        model.closeTerminal(active)
+                    }
+                }
+                .keyboardShortcut("w", modifiers: [.command])
+                .disabled(model.activeTerminalID == nil)
+                
+                Button("Close All Terminals") {
+                    model.closeAllTerminals()
+                }
+                .keyboardShortcut("w", modifiers: [.command, .shift])
+                .disabled(model.openTerminalTabs.isEmpty)
+                
+                Divider()
+                
+                Button("Previous Terminal") {
+                    switchToPreviousTerminal()
+                }
+                .keyboardShortcut("[", modifiers: [.command])
+                .disabled(model.openTerminalTabs.count < 2)
+                
+                Button("Next Terminal") {
+                    switchToNextTerminal()
+                }
+                .keyboardShortcut("]", modifiers: [.command])
+                .disabled(model.openTerminalTabs.count < 2)
             }
         }
+    }
+    
+    private func openFolderPicker() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            if response == .OK, let url = panel.urls.first {
+                let ref = ProjectRef(url: url)
+                model.openProject(ref)
+            }
+        }
+    }
+    
+    private func switchToPreviousTerminal() {
+        guard let active = model.activeTerminalID,
+              let currentIndex = model.openTerminalTabs.firstIndex(of: active),
+              currentIndex > 0 else { return }
+        model.activeTerminalID = model.openTerminalTabs[currentIndex - 1]
+    }
+    
+    private func switchToNextTerminal() {
+        guard let active = model.activeTerminalID,
+              let currentIndex = model.openTerminalTabs.firstIndex(of: active),
+              currentIndex < model.openTerminalTabs.count - 1 else { return }
+        model.activeTerminalID = model.openTerminalTabs[currentIndex + 1]
     }
 }
