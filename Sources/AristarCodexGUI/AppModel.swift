@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     let codexAuth: CodexAuthManager
     private var managers: [String: CodexSessionManager] = [:]
     private var managerCancellables: [String: AnyCancellable] = [:]
+    private var previewSessionCancellables: [UUID: AnyCancellable] = [:]
 
     init() {
         self.codexAuth = CodexAuthManager()
@@ -283,8 +284,9 @@ final class AppModel: ObservableObject {
             return nil
         }
 
-        if isPreviewRunning(serviceID: service.id, worktree: worktree) {
-            return previewSessions[worktree.id]?[service.id]
+        if let existing = previewSessions[worktree.id]?[service.id], existing.isRunning {
+            observePreviewSession(existing)
+            return existing
         }
 
         let session = PreviewServiceSession(
@@ -296,12 +298,10 @@ final class AppModel: ObservableObject {
         )
         session.onExit = { [weak self] in
             Task { @MainActor in
-                self?.previewSessions[worktree.id]?.removeValue(forKey: service.id)
-                if self?.previewSessions[worktree.id]?.isEmpty == true {
-                    self?.previewSessions.removeValue(forKey: worktree.id)
-                }
+                self?.removePreviewSession(worktreeID: worktree.id, serviceID: service.id)
             }
         }
+        observePreviewSession(session)
         previewSessions[worktree.id, default: [:]][service.id] = session
         return session
     }
@@ -311,15 +311,15 @@ final class AppModel: ObservableObject {
             session.stop()
         }
         previewError = nil
-        previewSessions[worktree.id]?.removeValue(forKey: serviceID)
-        if previewSessions[worktree.id]?.isEmpty == true {
-            previewSessions.removeValue(forKey: worktree.id)
-        }
+        removePreviewSession(worktreeID: worktree.id, serviceID: serviceID)
     }
 
     func stopPreview(for worktree: ManagedWorktree) {
         if let sessions = previewSessions[worktree.id]?.values {
-            sessions.forEach { $0.stop() }
+            sessions.forEach { session in
+                session.stop()
+                previewSessionCancellables.removeValue(forKey: session.id)
+            }
         }
         previewError = nil
         previewSessions.removeValue(forKey: worktree.id)
@@ -335,6 +335,25 @@ final class AppModel: ObservableObject {
 
     private func resolvedRootPath(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> String {
         PreviewPathResolver.resolve(rootPath: service.rootPath, worktreePath: worktree.path.path)
+    }
+
+    private func observePreviewSession(_ session: PreviewServiceSession) {
+        guard previewSessionCancellables[session.id] == nil else { return }
+        previewSessionCancellables[session.id] = session.$isRunning
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+    }
+
+    private func removePreviewSession(worktreeID: String, serviceID: UUID) {
+        if let session = previewSessions[worktreeID]?[serviceID] {
+            previewSessionCancellables.removeValue(forKey: session.id)
+        }
+        previewSessions[worktreeID]?.removeValue(forKey: serviceID)
+        if previewSessions[worktreeID]?.isEmpty == true {
+            previewSessions.removeValue(forKey: worktreeID)
+        }
     }
 
     // MARK: - Sessions
