@@ -42,16 +42,16 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
     }
 
     func start(initialCols: Int, initialRows: Int) {
-        print("[PreviewSession] start() called name=\(name) cols=\(initialCols) rows=\(initialRows)")
+        print("[preview] start() called name=\(name) cols=\(initialCols) rows=\(initialRows)")
         guard !hasStarted else {
-            print("[PreviewSession] already started, just updating window size")
+            print("[preview] already started, just updating window size")
             updateWindowSize(cols: initialCols, rows: initialRows)
             return
         }
         hasStarted = true
 
         guard let (master, slave) = Self.openPty(cols: initialCols, rows: initialRows) else {
-            print("[PreviewSession] ERROR: failed to allocate PTY")
+            print("[preview] ERROR: failed to allocate PTY")
             Task { @MainActor in
                 if let data = "\n[Failed to allocate preview terminal]\n".data(using: .utf8) {
                     self.output.append(data)
@@ -59,7 +59,7 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
             }
             return
         }
-        print("[PreviewSession] PTY allocated successfully")
+        print("[preview] PTY allocated successfully")
 
         prepareEnvFile()
 
@@ -69,8 +69,8 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
 
         let escapedRoot = Self.shellEscape(workingDirectory.path)
         let startCommand = "cd \(escapedRoot) && \(command)"
-        print("[PreviewSession] command: \(startCommand)")
-        print("[PreviewSession] workingDirectory: \(workingDirectory.path)")
+        print("[preview] command: \(startCommand)")
+        print("[preview] workingDirectory: \(workingDirectory.path)")
         proc.arguments = ["-l", "-c", startCommand]
         proc.standardInput = slave
         proc.standardOutput = slave
@@ -94,7 +94,7 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
         }
 
         proc.terminationHandler = { [weak self] proc in
-            print("[PreviewSession] process terminated status=\(proc.terminationStatus)")
+            print("[preview] process terminated status=\(proc.terminationStatus)")
             Task { @MainActor in
                 guard let self else { return }
                 self.isRunning = false
@@ -125,10 +125,10 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
             ptyMaster = master
             ptySlave = slave
             startTime = Date()
-            print("[PreviewSession] process started pid=\(proc.processIdentifier)")
+            print("[preview] process started pid=\(proc.processIdentifier)")
             Task { @MainActor in self.isRunning = true }
         } catch {
-            print("[PreviewSession] ERROR: failed to run process: \(error)")
+            print("[preview] ERROR: failed to run process: \(error)")
             Task { @MainActor in
                 let errorMsg = "\n[Failed to start \(self.name): \(error.localizedDescription)]\n"
                 if let data = errorMsg.data(using: .utf8) {
@@ -182,7 +182,7 @@ final class PreviewServiceSession: ObservableObject, Identifiable {
         do {
             try master.write(contentsOf: data)
         } catch {
-            print("Failed to write to preview PTY: \(error)")
+            print("[preview] Failed to write to preview PTY: \(error)")
         }
     }
 

@@ -104,7 +104,7 @@ private struct ResizableDivider: View {
         Rectangle()
             .fill(isDragging || isHovering ? BrandColor.ion : BrandColor.orbit.opacity(0.4))
             .frame(width: isDragging || isHovering ? 4 : 1)
-            .contentShape(Rectangle().size(width: 12, height: .infinity))
+            .contentShape(Rectangle())
             .frame(width: 8)
             .onHover { hovering in
                 withAnimation(.easeOut(duration: 0.1)) {

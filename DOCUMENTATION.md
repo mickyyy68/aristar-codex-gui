@@ -79,7 +79,7 @@ The app uses a **focused single-project layout** with a split view design:
 - `PreviewServiceSession.swift`, `PreviewTerminalContainer.swift` – per-service preview processes + SwiftTerm bridges.
 - `BrandStyle.swift` – design tokens (colors, radii, typography helpers, button styles) shared across views.
 - `ProjectListStore.swift` – persistence for favorites/recents.
-- `TerminalPanelStore.swift` – persistence for open terminal tabs, panel width, and current project.
+- `TerminalPanelStore.swift` – persistence for terminal tabs, panel width, and current project (tabs are saved during a run but not auto-restored on launch).
 - `PreviewServicesSheet.swift` – sheet UI for configuring and running preview services per-worktree.
 
 ## Behavioral details
@@ -91,6 +91,7 @@ The app uses a **focused single-project layout** with a split view design:
 - Nested worktrees are blocked: if the opened folder lives under the managed worktrees root, creating additional worktrees is disabled (depth capped at 1).
 - Session updates: `AppModel` observes `CodexSessionManager` so session start/stop state stays in sync across views.
 - Session persistence: removed; "Resume" runs `codex resume` in the worktree without storing session history.
+- Startup: the last project is reopened, but terminal tabs start closed; previously open tabs are not restored on launch.
 - Terminal: SwiftTerm connected to PTY master; TERM set to `xterm-256color`; raw escape sequences are passed through to SwiftTerm; session start is deferred until the view has a real size so the PTY is created with the correct cols/rows (also exported via `COLUMNS`/`LINES`), and subsequent resizes update the PTY size with SIGWINCH; a 1-row safety margin is applied (report rows-1 to the PTY) to avoid bottom-edge clipping; sessions launch a login `zsh` that runs the Codex command then execs into an interactive shell. Switching terminal tabs restores the session's output buffer and auto-focuses the terminal for immediate input.
 - Error surfacing: worktree creation errors and missing projects surface inline; codex binary missing errors surfaced via auth status.
 - Visual language: dark "Ink" base with "Midnight" panels, "Ion" accents/CTAs, rounded pills/cards, and a custom SwiftTerm theme (Ink background, Flour text, Ion cursor, Icing selection). Shared button styles (primary/ghost/danger) and pills live in `BrandStyle.swift`.

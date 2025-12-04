@@ -68,15 +68,6 @@ final class AppModel: ObservableObject {
         if let savedProject = TerminalPanelStore.loadCurrentProject() {
             openProject(savedProject, recordRecent: false)
         }
-        
-        // Restore terminal tabs
-        openTerminalTabs = TerminalPanelStore.loadOpenTabs().filter { id in
-            worktreesForCurrentProject.contains { $0.id == id }
-        }
-        activeTerminalID = TerminalPanelStore.loadActiveTab()
-        if let active = activeTerminalID, !openTerminalTabs.contains(active) {
-            activeTerminalID = openTerminalTabs.first
-        }
     }
     
     // MARK: - Project Management
@@ -154,7 +145,7 @@ final class AppModel: ObservableObject {
     
     /// Stop all running agent sessions and preview services (called on app termination)
     func stopAllSessions() {
-        log("[cleanup] Stopping all sessions...")
+        self.log("[cleanup] Stopping all sessions...")
         
         // Stop all Codex agent sessions across all managers
         for (_, manager) in managers {
@@ -164,13 +155,13 @@ final class AppModel: ObservableObject {
         // Stop all preview service sessions
         for (_, sessions) in previewSessions {
             for (_, session) in sessions {
-                log("[cleanup] Stopping preview session: \(session.name)")
+                self.log("[cleanup] Stopping preview session: \(session.name)")
                 session.stop()
             }
         }
         previewSessions.removeAll()
         
-        log("[cleanup] All sessions stopped.")
+        self.log("[cleanup] All sessions stopped.")
     }
     
     // MARK: - Worktree Management
@@ -207,9 +198,9 @@ final class AppModel: ObservableObject {
         // Delete the worktree
         if !manager.deleteWorktree(worktree) {
             hubError = manager.lastWorktreeError
-            log("[delete] Failed \(manager.lastWorktreeError ?? "unknown error") worktree=\(worktree.displayName)")
+            self.log("[delete] Failed \(manager.lastWorktreeError ?? "unknown error") worktree=\(worktree.displayName)")
         } else {
-            log("[delete] Removed worktree=\(worktree.displayName) project=\(project.name)")
+            self.log("[delete] Removed worktree=\(worktree.displayName) project=\(project.name)")
         }
     }
     
@@ -259,12 +250,12 @@ final class AppModel: ObservableObject {
     func startAgent(for worktree: ManagedWorktree) {
         guard let project = currentProject,
               let manager = manager(for: project.url) else {
-            log("[start] No project or manager")
+            self.log("[start] No project or manager")
             return
         }
         
         let session = manager.startSession(for: worktree)
-        log("[start] Started session id=\(session.id) worktree=\(worktree.displayName)")
+        self.log("[start] Started session id=\(session.id) worktree=\(worktree.displayName)")
         
         // Open terminal
         openTerminal(for: worktree)
@@ -273,12 +264,12 @@ final class AppModel: ObservableObject {
     func stopAgent(for worktree: ManagedWorktree) {
         guard let project = currentProject,
               let manager = manager(for: project.url) else {
-            log("[stop] No project or manager")
+            self.log("[stop] No project or manager")
             return
         }
         
         manager.stopSession(for: worktree)
-        log("[stop] Stopped session worktree=\(worktree.displayName)")
+        self.log("[stop] Stopped session worktree=\(worktree.displayName)")
         
         // Close terminal tab
         closeTerminal(worktree.id)
@@ -287,12 +278,12 @@ final class AppModel: ObservableObject {
     func resumeAgent(for worktree: ManagedWorktree) {
         guard let project = currentProject,
               let manager = manager(for: project.url) else {
-            log("[resume] No project or manager")
+            self.log("[resume] No project or manager")
             return
         }
         
         let session = manager.resumeSession(for: worktree)
-        log("[resume] Resumed session id=\(session.id) worktree=\(worktree.displayName)")
+        self.log("[resume] Resumed session id=\(session.id) worktree=\(worktree.displayName)")
         
         // Auto-open terminal
         openTerminal(for: worktree)
@@ -340,31 +331,31 @@ final class AppModel: ObservableObject {
     }
     
     func startPreviewService(_ service: PreviewServiceConfig, worktree: ManagedWorktree) -> PreviewServiceSession? {
-        log("[preview] startPreviewService called for service=\(service.name) worktree=\(worktree.displayName)")
+        self.log("[preview] startPreviewService called for service=\(service.name) worktree=\(worktree.displayName)")
         previewError = nil
         let trimmed = service.command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             previewError = "Command is required for \(service.name.isEmpty ? "a service" : service.name)."
-            log("[preview] ERROR: empty command")
+            self.log("[preview] ERROR: empty command")
             return nil
         }
         
         let root = resolvedRootPath(service, worktree: worktree)
-        log("[preview] resolved root path: \(root)")
+        self.log("[preview] resolved root path: \(root)")
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else {
             previewError = "Root path for \(service.name.isEmpty ? "service" : service.name) is not a folder."
-            log("[preview] ERROR: root path does not exist or is not a folder")
+            self.log("[preview] ERROR: root path does not exist or is not a folder")
             return nil
         }
         
         if let existing = previewSessions[worktree.id]?[service.id], existing.isRunning {
-            log("[preview] returning existing running session id=\(existing.id)")
+            self.log("[preview] returning existing running session id=\(existing.id)")
             observePreviewSession(existing)
             return existing
         }
         
-        log("[preview] creating new session command=\(trimmed)")
+        self.log("[preview] creating new session command=\(trimmed)")
         let session = PreviewServiceSession(
             serviceID: service.id,
             name: service.name.isEmpty ? "Service" : service.name,
@@ -380,8 +371,8 @@ final class AppModel: ObservableObject {
         }
         observePreviewSession(session)
         previewSessions[worktree.id, default: [:]][service.id] = session
-        log("[preview] session created and stored id=\(session.id) isRunning=\(session.isRunning)")
-        log("[preview] previewSessions count for worktree: \(previewSessions[worktree.id]?.count ?? 0)")
+        self.log("[preview] session created and stored id=\(session.id) isRunning=\(session.isRunning)")
+        self.log("[preview] previewSessions count for worktree: \(previewSessions[worktree.id]?.count ?? 0)")
         return session
     }
     
