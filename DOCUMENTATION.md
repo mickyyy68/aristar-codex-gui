@@ -40,6 +40,7 @@ The app uses a **focused single-project layout** with a split view design:
 ### Layout components
 - **Project Header**: Current project name + path, dropdown switcher, "+ New Worktree" button
 - **Worktree List Panel** (left): All worktrees for the current project with status, branch, and inline actions
+- **Resizable Divider**: Drag to resize panels; cursor changes on hover, width persisted to UserDefaults
 - **Terminal Panel** (right): Tabbed terminal view for running agents; appears when terminals are open
 - **Status Footer**: Codex connection status
 
@@ -77,7 +78,8 @@ The app uses a **focused single-project layout** with a split view design:
 - `PreviewServiceSession.swift`, `PreviewTerminalContainer.swift` – per-service preview processes + SwiftTerm bridges.
 - `BrandStyle.swift` – design tokens (colors, radii, typography helpers, button styles) shared across views.
 - `ProjectListStore.swift` – persistence for favorites/recents.
-- `TerminalPanelStore.swift` – persistence for open terminal tabs and panel state.
+- `TerminalPanelStore.swift` – persistence for open terminal tabs, panel width, and current project.
+- `PreviewServicesSheet.swift` – sheet UI for configuring and running preview services per-worktree.
 
 ## Behavioral details
 - Worktree root per project: `~/.aristar-codex-gui/worktrees/<project-name>-<hash>/…`.
@@ -122,6 +124,8 @@ The app uses a **focused single-project layout** with a split view design:
 - Deleting a worktree stops its agent (if running), removes the worktree directory, and deletes the agent branch.
 - Brand theme renders correctly (Ink/Midnight surfaces, Ion accents, custom SwiftTerm colors).
 - Worktrees can be renamed inline. Renames trim whitespace, reject empty names, and persist the alias to metadata without changing the folder or agent branch names.
+- Resizable split view divider can be dragged to resize panels; width persists across sessions.
+- Preview services can be configured and run per-worktree via the Services button.
 - `swift test` runs unit + integration coverage.
 
 ## Safe changes & guidelines

@@ -3,6 +3,11 @@ import AppKit
 
 struct ContentView: View {
     @ObservedObject var model: AppModel
+    @State private var leftPanelWidth: CGFloat = 320
+    @State private var isDragging = false
+    
+    private let minLeftWidth: CGFloat = 250
+    private let minRightWidth: CGFloat = 300
     
     init(model: AppModel) {
         self.model = model
@@ -28,15 +33,21 @@ struct ContentView: View {
                         .padding(.top, 8)
                     }
                     
-                    // Main split view
+                    // Main resizable split view
                     GeometryReader { geometry in
                         HStack(spacing: 0) {
                             // Left panel: Worktree list
                             WorktreeListPanel(model: model)
-                                .frame(width: max(280, geometry.size.width * 0.3))
+                                .frame(width: clampedLeftWidth(for: geometry.size.width))
                             
-                            Divider()
-                                .background(BrandColor.orbit.opacity(0.3))
+                            // Resizable divider
+                            ResizableDivider(
+                                isDragging: $isDragging,
+                                onDrag: { delta in
+                                    let newWidth = leftPanelWidth + delta
+                                    leftPanelWidth = clampWidth(newWidth, totalWidth: geometry.size.width)
+                                }
+                            )
                             
                             // Right panel: Terminal (or empty state)
                             if model.hasOpenTerminals {
@@ -51,6 +62,72 @@ struct ContentView: View {
                 }
             }
         }
+        .onAppear {
+            // Load saved panel width
+            let saved = TerminalPanelStore.loadPanelWidth()
+            if saved > 0 {
+                leftPanelWidth = saved
+            }
+        }
+        .onChange(of: leftPanelWidth) { newValue in
+            // Save panel width when changed
+            if !isDragging {
+                TerminalPanelStore.savePanelWidth(newValue)
+            }
+        }
+        .onChange(of: isDragging) { dragging in
+            // Save when drag ends
+            if !dragging {
+                TerminalPanelStore.savePanelWidth(leftPanelWidth)
+            }
+        }
+    }
+    
+    private func clampedLeftWidth(for totalWidth: CGFloat) -> CGFloat {
+        clampWidth(leftPanelWidth, totalWidth: totalWidth)
+    }
+    
+    private func clampWidth(_ width: CGFloat, totalWidth: CGFloat) -> CGFloat {
+        let maxLeft = totalWidth - minRightWidth - 8 // 8 for divider
+        return min(max(width, minLeftWidth), maxLeft)
+    }
+}
+
+/// Draggable divider for resizing split view
+private struct ResizableDivider: View {
+    @Binding var isDragging: Bool
+    let onDrag: (CGFloat) -> Void
+    
+    @State private var isHovering = false
+    
+    var body: some View {
+        Rectangle()
+            .fill(isDragging || isHovering ? BrandColor.ion : BrandColor.orbit.opacity(0.4))
+            .frame(width: isDragging || isHovering ? 4 : 1)
+            .contentShape(Rectangle().size(width: 12, height: .infinity))
+            .frame(width: 8)
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.1)) {
+                    isHovering = hovering
+                }
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                        }
+                        onDrag(value.translation.width)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
     }
 }
 

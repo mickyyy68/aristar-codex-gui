@@ -4,7 +4,7 @@ import SwiftUI
 struct TerminalPanelStore {
     private static let openTabsKey = "aristar.terminalPanel.openTabs"
     private static let activeTabKey = "aristar.terminalPanel.activeTab"
-    private static let panelWidthKey = "aristar.terminalPanel.width"
+    private static let panelWidthKey = "aristar.splitView.leftPanelWidth"
     private static let currentProjectKey = "aristar.currentProject"
     
     static func saveOpenTabs(_ tabs: [String]) {
@@ -29,7 +29,7 @@ struct TerminalPanelStore {
     
     static func loadPanelWidth() -> CGFloat {
         let value = UserDefaults.standard.double(forKey: panelWidthKey)
-        return value > 0 ? CGFloat(value) : 500
+        return value > 0 ? CGFloat(value) : 320 // Default left panel width
     }
     
     static func saveCurrentProject(_ project: ProjectRef?) {
