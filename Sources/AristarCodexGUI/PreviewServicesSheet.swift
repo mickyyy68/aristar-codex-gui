@@ -9,6 +9,7 @@ struct PreviewServicesSheet: View {
     @State private var services: [PreviewServiceConfig] = []
     @State private var editingService: PreviewServiceConfig?
     @State private var showAddService = false
+    @State private var selectedServiceID: UUID?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -39,8 +40,8 @@ struct PreviewServicesSheet: View {
             
             Divider()
             
-            // Services list
             if services.isEmpty {
+                // Empty state
                 VStack(spacing: 16) {
                     Spacer()
                     Image(systemName: "square.stack.3d.up")
@@ -65,69 +66,157 @@ struct PreviewServicesSheet: View {
                 .frame(maxWidth: .infinity)
                 .padding()
             } else {
-                ScrollView {
-                    VStack(spacing: 12) {
-                        ForEach(services) { service in
-                            PreviewServiceRow(
-                                service: service,
-                                isRunning: model.isPreviewRunning(serviceID: service.id, worktree: worktree),
-                                onStart: {
-                                    _ = model.startPreviewService(service, worktree: worktree)
-                                },
-                                onStop: {
-                                    model.stopPreviewService(service.id, worktree: worktree)
-                                },
-                                onEdit: {
-                                    editingService = service
-                                },
-                                onDelete: {
-                                    deleteService(service)
-                                },
-                                onToggleEnabled: { enabled in
-                                    toggleEnabled(service, enabled: enabled)
+                // Split view: service list on left, terminal on right
+                HSplitView {
+                    // Left: Service list
+                    VStack(spacing: 0) {
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                ForEach(services) { service in
+                                    PreviewServiceRow(
+                                        service: service,
+                                        isSelected: selectedServiceID == service.id,
+                                        isRunning: model.isPreviewRunning(serviceID: service.id, worktree: worktree),
+                                        onSelect: {
+                                            selectedServiceID = service.id
+                                        },
+                                        onStart: {
+                                            startService(service)
+                                        },
+                                        onStop: {
+                                            model.stopPreviewService(service.id, worktree: worktree)
+                                        },
+                                        onEdit: {
+                                            editingService = service
+                                        },
+                                        onDelete: {
+                                            deleteService(service)
+                                        },
+                                        onToggleEnabled: { enabled in
+                                            toggleEnabled(service, enabled: enabled)
+                                        }
+                                    )
                                 }
-                            )
+                            }
+                            .padding(12)
                         }
-                    }
-                    .padding()
-                }
-                
-                Divider()
-                
-                // Footer with actions
-                HStack {
-                    Button {
-                        showAddService = true
-                    } label: {
-                        Label("Add Service", systemImage: "plus")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandGhost)
-                    
-                    Spacer()
-                    
-                    if services.contains(where: { $0.enabled }) {
-                        if model.isPreviewRunning(for: worktree) {
+                        
+                        Divider()
+                        
+                        // Footer with actions
+                        HStack {
                             Button {
-                                model.stopPreview(for: worktree)
+                                showAddService = true
                             } label: {
-                                Label("Stop All", systemImage: "stop.fill")
+                                Label("Add", systemImage: "plus")
                                     .font(.caption.weight(.semibold))
                             }
-                            .buttonStyle(.brandDanger)
+                            .buttonStyle(.brandGhost)
+                            
+                            Spacer()
+                            
+                            if services.contains(where: { $0.enabled }) {
+                                if model.isPreviewRunning(for: worktree) {
+                                    Button {
+                                        model.stopPreview(for: worktree)
+                                    } label: {
+                                        Label("Stop All", systemImage: "stop.fill")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .buttonStyle(.brandDanger)
+                                } else {
+                                    Button {
+                                        startAllServices()
+                                    } label: {
+                                        Label("Start All", systemImage: "play.fill")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .buttonStyle(.brandPrimary)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .background(BrandColor.midnight)
+                    }
+                    .frame(minWidth: 280, maxWidth: 350)
+                    .background(BrandColor.ink)
+                    
+                    // Right: Terminal output
+                    VStack(spacing: 0) {
+                        if let serviceID = selectedServiceID,
+                           let session = model.previewSessions[worktree.id]?[serviceID],
+                           session.isRunning {
+                            // Show terminal for selected running service
+                            VStack(spacing: 0) {
+                                HStack {
+                                    Circle()
+                                        .fill(BrandColor.mint)
+                                        .frame(width: 8, height: 8)
+                                    Text(session.name)
+                                        .font(BrandFont.ui(size: 13, weight: .semibold))
+                                        .foregroundStyle(BrandColor.flour)
+                                    Spacer()
+                                    Button {
+                                        model.stopPreviewService(serviceID, worktree: worktree)
+                                    } label: {
+                                        Label("Stop", systemImage: "stop.fill")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                    .buttonStyle(.brandDanger)
+                                }
+                                .padding(10)
+                                .background(BrandColor.midnight)
+                                
+                                Divider()
+                                
+                                PreviewTerminalContainer(session: session)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        } else if let serviceID = selectedServiceID,
+                                  let service = services.first(where: { $0.id == serviceID }) {
+                            // Service selected but not running
+                            VStack(spacing: 16) {
+                                Spacer()
+                                Image(systemName: "terminal")
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(.secondary)
+                                Text(service.name.isEmpty ? "Service" : service.name)
+                                    .font(BrandFont.ui(size: 15, weight: .semibold))
+                                    .foregroundStyle(BrandColor.flour)
+                                Text("Start the service to see output")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                
+                                Button {
+                                    startService(service)
+                                } label: {
+                                    Label("Start", systemImage: "play.fill")
+                                }
+                                .buttonStyle(.brandPrimary)
+                                .disabled(!service.enabled)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
-                            Button {
-                                model.startPreview(for: worktree, services: services)
-                            } label: {
-                                Label("Start All", systemImage: "play.fill")
-                                    .font(.caption.weight(.semibold))
+                            // No service selected
+                            VStack(spacing: 16) {
+                                Spacer()
+                                Image(systemName: "terminal")
+                                    .font(.system(size: 40))
+                                    .foregroundStyle(.secondary)
+                                Text("Select a service")
+                                    .font(BrandFont.ui(size: 15, weight: .semibold))
+                                    .foregroundStyle(BrandColor.flour)
+                                Text("Click on a service to view its output")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
                             }
-                            .buttonStyle(.brandPrimary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
+                    .background(BrandColor.ink.opacity(0.5))
                 }
-                .padding()
-                .background(BrandColor.midnight)
             }
             
             // Error display
@@ -144,10 +233,14 @@ struct PreviewServicesSheet: View {
                 .background(BrandColor.citrus.opacity(0.15))
             }
         }
-        .frame(minWidth: 500, minHeight: 400)
+        .frame(minWidth: 700, minHeight: 500)
         .background(BrandColor.ink)
         .onAppear {
             loadServices()
+            // Auto-select first service
+            if selectedServiceID == nil {
+                selectedServiceID = services.first?.id
+            }
         }
         .sheet(isPresented: $showAddService) {
             ServiceEditorSheet(
@@ -190,6 +283,7 @@ struct PreviewServicesSheet: View {
     private func addService(_ service: PreviewServiceConfig) {
         services.append(service)
         saveServices()
+        selectedServiceID = service.id
     }
     
     private func updateService(_ service: PreviewServiceConfig) {
@@ -203,6 +297,9 @@ struct PreviewServicesSheet: View {
         model.stopPreviewService(service.id, worktree: worktree)
         services.removeAll { $0.id == service.id }
         saveServices()
+        if selectedServiceID == service.id {
+            selectedServiceID = services.first?.id
+        }
     }
     
     private func toggleEnabled(_ service: PreviewServiceConfig, enabled: Bool) {
@@ -211,12 +308,30 @@ struct PreviewServicesSheet: View {
             saveServices()
         }
     }
+    
+    private func startService(_ service: PreviewServiceConfig) {
+        if let session = model.startPreviewService(service, worktree: worktree) {
+            selectedServiceID = service.id
+            // The session will be started when the terminal view is displayed
+            _ = session // Keep reference
+        }
+    }
+    
+    private func startAllServices() {
+        model.startPreview(for: worktree, services: services)
+        // Select first enabled service
+        if let first = services.first(where: { $0.enabled }) {
+            selectedServiceID = first.id
+        }
+    }
 }
 
 /// Row for a single preview service
 private struct PreviewServiceRow: View {
     let service: PreviewServiceConfig
+    let isSelected: Bool
     let isRunning: Bool
+    let onSelect: () -> Void
     let onStart: () -> Void
     let onStop: () -> Void
     let onEdit: () -> Void
@@ -226,94 +341,78 @@ private struct PreviewServiceRow: View {
     @State private var isHovering = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                // Status indicator
-                Circle()
-                    .fill(isRunning ? BrandColor.mint : (service.enabled ? BrandColor.orbit.opacity(0.6) : BrandColor.orbit.opacity(0.3)))
-                    .frame(width: 10, height: 10)
-                
-                // Service info
-                VStack(alignment: .leading, spacing: 2) {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    // Status indicator
+                    Circle()
+                        .fill(isRunning ? BrandColor.mint : (service.enabled ? BrandColor.orbit.opacity(0.6) : BrandColor.orbit.opacity(0.3)))
+                        .frame(width: 8, height: 8)
+                    
+                    // Service name
                     Text(service.name.isEmpty ? "Unnamed Service" : service.name)
-                        .font(BrandFont.ui(size: 14, weight: .semibold))
+                        .font(BrandFont.ui(size: 13, weight: .semibold))
                         .foregroundStyle(service.enabled ? BrandColor.flour : BrandColor.flour.opacity(0.5))
-                    
-                    Text(service.command)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
                         .lineLimit(1)
-                }
-                
-                Spacer()
-                
-                // Enabled toggle
-                Toggle("", isOn: Binding(
-                    get: { service.enabled },
-                    set: { onToggleEnabled($0) }
-                ))
-                .toggleStyle(.switch)
-                .controlSize(.small)
-                .disabled(isRunning)
-            }
-            
-            // Actions row
-            HStack(spacing: 8) {
-                if isRunning {
-                    Button(action: onStop) {
-                        Label("Stop", systemImage: "stop.fill")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandDanger)
-                } else {
-                    Button(action: onStart) {
-                        Label("Start", systemImage: "play.fill")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.brandPrimary)
-                    .disabled(!service.enabled)
-                }
-                
-                Spacer()
-                
-                if isHovering && !isRunning {
-                    Button(action: onEdit) {
-                        Image(systemName: "pencil")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
                     
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .font(.caption)
+                    Spacer()
+                    
+                    // Quick action buttons
+                    if isHovering || isSelected {
+                        if isRunning {
+                            Button(action: onStop) {
+                                Image(systemName: "stop.fill")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(BrandColor.berry)
+                        } else {
+                            Button(action: onStart) {
+                                Image(systemName: "play.fill")
+                                    .font(.caption2)
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(service.enabled ? BrandColor.mint : .secondary)
+                            .disabled(!service.enabled)
+                        }
+                        
+                        Button(action: onEdit) {
+                            Image(systemName: "pencil")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .disabled(isRunning)
+                        
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(BrandColor.berry.opacity(isRunning ? 0.3 : 1))
+                        .disabled(isRunning)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(BrandColor.berry)
                 }
-            }
-            
-            // Show root path if set
-            if !service.rootPath.isEmpty {
-                Label(service.rootPath, systemImage: "folder")
-                    .font(.caption2)
+                
+                // Command preview
+                Text(service.command)
+                    .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                    .fill(isSelected ? BrandColor.ion.opacity(0.15) : (isHovering ? BrandColor.midnight : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: BrandRadius.sm, style: .continuous)
+                    .stroke(isSelected ? BrandColor.ion.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                .fill(isHovering ? BrandColor.midnight : BrandColor.midnight.opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: BrandRadius.md, style: .continuous)
-                .stroke(isRunning ? BrandColor.mint.opacity(0.4) : BrandColor.orbit.opacity(0.2), lineWidth: 1)
-        )
+        .buttonStyle(.plain)
         .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.1)) {
-                isHovering = hovering
-            }
+            isHovering = hovering
         }
     }
 }
